@@ -1,3 +1,5 @@
+// Package shell provides the LLM-callable shell tool.
+// Actual command execution is delegated to runtime/shell.
 package shell
 
 import (
@@ -8,16 +10,17 @@ import (
 	"time"
 
 	"github.com/vigo999/ms-cli/integrations/llm"
+	rshell "github.com/vigo999/ms-cli/runtime/shell"
 	"github.com/vigo999/ms-cli/tools"
 )
 
-// ShellTool wraps shell execution as a Tool.
+// ShellTool wraps shell execution as an LLM-callable Tool.
 type ShellTool struct {
-	runner *Runner
+	runner *rshell.Runner
 }
 
-// NewShellTool creates a new shell tool.
-func NewShellTool(runner *Runner) *ShellTool {
+// NewShellTool creates a new shell tool backed by a runtime shell runner.
+func NewShellTool(runner *rshell.Runner) *ShellTool {
 	return &ShellTool{runner: runner}
 }
 
@@ -66,20 +69,17 @@ func (t *ShellTool) Execute(ctx context.Context, params json.RawMessage) (*tools
 		return tools.ErrorResultf("command is required"), nil
 	}
 
-	// Apply custom timeout if specified
 	if p.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeoutFromInt(p.Timeout))
 		defer cancel()
 	}
 
-	// Run command
 	result, err := t.runner.Run(ctx, command)
 	if err != nil {
 		return tools.ErrorResultf("execute command: %w", err), nil
 	}
 
-	// Build output
 	var parts []string
 	parts = append(parts, fmt.Sprintf("$ %s", command))
 
@@ -95,7 +95,6 @@ func (t *ShellTool) Execute(ctx context.Context, params json.RawMessage) (*tools
 
 	output := strings.Join(parts, "\n")
 
-	// Summary
 	summary := fmt.Sprintf("exit %d", result.ExitCode)
 	if result.Error != nil {
 		summary = fmt.Sprintf("error: %s", result.Error.Error())

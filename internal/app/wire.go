@@ -1,15 +1,294 @@
 package app
 
-// Container stores the assembled application dependencies.
-type Container struct {
-	App *Application
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/vigo999/ms-cli/agent/context"
+	"github.com/vigo999/ms-cli/agent/loop"
+	"github.com/vigo999/ms-cli/agent/orchestrator"
+	"github.com/vigo999/ms-cli/agent/planner"
+	"github.com/vigo999/ms-cli/configs"
+	"github.com/vigo999/ms-cli/integrations/llm"
+	openai "github.com/vigo999/ms-cli/integrations/llm/openai"
+	"github.com/vigo999/ms-cli/permission"
+	rshell "github.com/vigo999/ms-cli/runtime/shell"
+	"github.com/vigo999/ms-cli/tools"
+	"github.com/vigo999/ms-cli/tools/fs"
+	"github.com/vigo999/ms-cli/tools/shell"
+	"github.com/vigo999/ms-cli/trace"
+	"github.com/vigo999/ms-cli/ui/model"
+)
+
+var errAPIKeyNotFound = errors.New("api key not found")
+
+const Version = "MindSpore AI Infra Agent CLI. v0.2.0"
+
+// Application is the top-level composition container.
+type Application struct {
+	Engine       *loop.Engine
+	Orchestrator *orchestrator.Orchestrator
+	EventCh      chan model.Event
+	Demo         bool
+	llmReady     bool
+	WorkDir      string
+	RepoURL      string
+	Config       *configs.Config
+	provider     llm.Provider
+	toolRegistry *tools.Registry
+	ctxManager   *context.Manager
+	permService  permission.PermissionService
+	stateManager *configs.StateManager
+	traceWriter  trace.Writer
 }
 
-// Wire builds the application container.
-func Wire(cfg BootstrapConfig) (*Container, error) {
-	application, err := Bootstrap(cfg)
+// BootstrapConfig holds bootstrap configuration.
+type BootstrapConfig struct {
+	Demo       bool
+	ConfigPath string
+	URL        string
+	Model      string
+	Key        string
+}
+
+// Wire builds and returns the Application.
+func Wire(cfg BootstrapConfig) (*Application, error) {
+	configPath := cfg.ConfigPath
+	if configPath == "" {
+		configPath = configs.FindConfigFile()
+	}
+
+	config, err := configs.LoadWithEnv(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("load config: %w", err)
+	}
+
+	workDir, err := os.Getwd()
+	if err != nil {
+		workDir = "."
+	}
+	workDir, _ = filepath.Abs(workDir)
+
+	stateManager := configs.NewStateManager(workDir)
+	if err := stateManager.Load(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to load state: %v\n", err)
+	}
+	stateManager.ApplyToConfig(config)
+	configs.ApplyEnvOverrides(config)
+
+	if cfg.URL != "" {
+		config.Model.URL = cfg.URL
+	}
+	if cfg.Model != "" {
+		config.Model.Model = cfg.Model
+	}
+	if cfg.Key != "" {
+		config.Model.Key = cfg.Key
+	}
+
+	if cfg.Demo {
+		engine := loop.NewEngine(loop.EngineConfig{}, nil, nil)
+		return &Application{
+			Engine:  engine,
+			EventCh: make(chan model.Event, 64),
+			Demo:    true,
+			WorkDir: workDir,
+			RepoURL: "github.com/vigo999/ms-cli",
+			Config:  config,
+		}, nil
+	}
+
+	provider, err := initProvider(config.Model)
+	llmReady := true
+	if err != nil {
+		if errors.Is(err, errAPIKeyNotFound) {
+			llmReady = false
+			provider = nil
+		} else {
+			return nil, fmt.Errorf("init provider: %w", err)
+		}
+	}
+
+	toolRegistry := initTools(config, workDir)
+
+	ctxManager := context.NewManager(context.ManagerConfig{
+		MaxTokens:           config.Context.MaxTokens,
+		ReserveTokens:       config.Context.ReserveTokens,
+		CompactionThreshold: config.Context.CompactionThreshold,
+		MaxHistoryRounds:    config.Context.MaxHistoryRounds,
+	})
+
+	traceWriter, err := trace.NewTimestampWriter(filepath.Join(workDir, ".cache"))
+	if err != nil {
+		return nil, fmt.Errorf("init trace writer: %w", err)
+	}
+
+	engineCfg := loop.EngineConfig{
+		MaxIterations:  0,
+		MaxTokens:      config.Budget.MaxTokens,
+		Temperature:    float32(config.Model.Temperature),
+		TimeoutPerTurn: time.Duration(config.Model.TimeoutSec) * time.Second,
+	}
+	engine := loop.NewEngine(engineCfg, provider, toolRegistry)
+	engine.SetContextManager(ctxManager)
+	engine.SetTraceWriter(traceWriter)
+
+	permService := permission.NewDefaultPermissionService(config.Permissions)
+	engine.SetPermissionService(permService)
+
+	// Build orchestrator (planner is nil when LLM is not ready)
+	var orch *orchestrator.Orchestrator
+	if provider != nil {
+		p := planner.New(provider, planner.DefaultConfig())
+		orch = orchestrator.New(orchestrator.Config{
+			Mode:           orchestrator.ModeStandard,
+			AvailableTools: engine.ToolNames(),
+		}, engine, p, nil)
+	} else {
+		orch = orchestrator.New(orchestrator.Config{
+			Mode: orchestrator.ModeStandard,
+		}, engine, nil, nil)
+	}
+
+	return &Application{
+		Engine:       engine,
+		Orchestrator: orch,
+		EventCh:      make(chan model.Event, 64),
+		Demo:         false,
+		WorkDir:      workDir,
+		RepoURL:      "github.com/vigo999/ms-cli",
+		Config:       config,
+		provider:     provider,
+		toolRegistry: toolRegistry,
+		ctxManager:   ctxManager,
+		permService:  permService,
+		stateManager: stateManager,
+		traceWriter:  traceWriter,
+		llmReady:     llmReady,
+	}, nil
+}
+
+// SetProvider updates model/key and reinitializes the engine.
+func (a *Application) SetProvider(providerName, modelName, apiKey string) error {
+	if providerName != "" && providerName != "openai" {
+		return fmt.Errorf("unsupported provider: %s (only openai-compatible is supported)", providerName)
+	}
+
+	if modelName != "" {
+		a.Config.Model.Model = modelName
+	}
+	if apiKey != "" {
+		a.Config.Model.Key = apiKey
+	}
+
+	provider, err := initProvider(a.Config.Model)
+	if err != nil {
+		if err == errAPIKeyNotFound {
+			a.llmReady = false
+			provider = nil
+		} else {
+			return fmt.Errorf("init provider: %w", err)
+		}
+	} else {
+		a.llmReady = true
+	}
+
+	engineCfg := loop.EngineConfig{
+		MaxIterations:  10,
+		MaxTokens:      a.Config.Budget.MaxTokens,
+		Temperature:    float32(a.Config.Model.Temperature),
+		TimeoutPerTurn: time.Duration(a.Config.Model.TimeoutSec) * time.Second,
+	}
+	newEngine := loop.NewEngine(engineCfg, provider, a.toolRegistry)
+	newEngine.SetContextManager(a.ctxManager)
+	newEngine.SetPermissionService(a.permService)
+	newEngine.SetTraceWriter(a.traceWriter)
+
+	a.Engine = newEngine
+	a.provider = provider
+
+	// Rebuild orchestrator with new engine
+	if provider != nil {
+		p := planner.New(provider, planner.DefaultConfig())
+		mode := orchestrator.ModeStandard
+		if a.Orchestrator != nil {
+			// preserve current mode
+		}
+		a.Orchestrator = orchestrator.New(orchestrator.Config{
+			Mode:           mode,
+			AvailableTools: newEngine.ToolNames(),
+		}, newEngine, p, nil)
+	}
+
+	if a.stateManager != nil {
+		a.stateManager.SaveFromConfig(a.Config)
+		if err := a.stateManager.Save(); err != nil {
+			return fmt.Errorf("save state: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// SaveState saves current configuration to persistent state.
+func (a *Application) SaveState() error {
+	if a.stateManager == nil {
+		return nil
+	}
+	a.stateManager.SaveFromConfig(a.Config)
+	return a.stateManager.Save()
+}
+
+func initProvider(cfg configs.ModelConfig) (llm.Provider, error) {
+	key := strings.TrimSpace(cfg.Key)
+	if key == "" {
+		key = strings.TrimSpace(os.Getenv("MSCLI_API_KEY"))
+	}
+	if key == "" {
+		key = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	}
+	if key == "" {
+		return nil, errAPIKeyNotFound
+	}
+
+	url := strings.TrimSpace(cfg.URL)
+	if url == "" {
+		url = "https://api.openai.com/v1"
+	}
+
+	client, err := openai.NewClient(openai.Config{
+		Key:     key,
+		URL:     url,
+		Model:   cfg.Model,
+		Timeout: time.Duration(cfg.TimeoutSec) * time.Second,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &Container{App: application}, nil
+	return client, nil
+}
+
+func initTools(cfg *configs.Config, workDir string) *tools.Registry {
+	registry := tools.NewRegistry()
+
+	registry.MustRegister(fs.NewReadTool(workDir))
+	registry.MustRegister(fs.NewWriteTool(workDir))
+	registry.MustRegister(fs.NewEditTool(workDir))
+	registry.MustRegister(fs.NewGrepTool(workDir))
+	registry.MustRegister(fs.NewGlobTool(workDir))
+
+	shellRunner := rshell.NewRunner(rshell.Config{
+		WorkDir:        workDir,
+		Timeout:        time.Duration(cfg.Execution.TimeoutSec) * time.Second,
+		AllowedCmds:    cfg.Permissions.AllowedTools,
+		BlockedCmds:    cfg.Permissions.BlockedTools,
+		RequireConfirm: []string{"rm", "mv", "cp"},
+	})
+	registry.MustRegister(shell.NewShellTool(shellRunner))
+
+	return registry
 }

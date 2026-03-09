@@ -1,5 +1,5 @@
 # Binaries
-ms-cli
+/ms-cli
 *.exe
 *.out
 

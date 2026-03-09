@@ -11,13 +11,13 @@ MindSpore CLI — an AI infrastructure agent with a terminal UI.
 Build:
 
 ```bash
-go build -o ms-cli ./app
+go build -o ms-cli ./cmd/ms-cli
 ```
 
 Run demo mode:
 
 ```bash
-go run ./app --demo
+go run ./cmd/ms-cli --demo
 # or
 ./ms-cli --demo
 ```
@@ -25,7 +25,7 @@ go run ./app --demo
 Run real mode:
 
 ```bash
-go run ./app
+go run ./cmd/ms-cli
 # or
 ./ms-cli
 ```
@@ -105,42 +105,44 @@ Project reports:
 
 ## Repository Structure
 
+See [`docs/ms-cli-arch.md`](docs/ms-cli-arch.md) for the current architecture and package map.
+
 ```text
 ms-cli/
-├── app/                        # entry point + wiring
-│   ├── main.go
-│   ├── bootstrap.go
-│   ├── wire.go
-│   ├── run.go
-│   └── commands.go
+├── cmd/ms-cli/                 # CLI entrypoint
+├── internal/app/               # bootstrap, wiring, startup
 ├── agent/
-│   ├── loop/                   # engine, task/event types, permissions
 │   ├── context/                # budget, compaction, context manager
-│   └── memory/                 # policy, store, retrieve
-├── executor/
-│   └── runner.go               # pluggable task executor
+│   ├── loop/                   # engine interfaces and flow
+│   ├── memory/                 # policy, store, retrieve
+│   ├── orchestrator/           # mode orchestration
+│   ├── planner/                # plan parsing and validation
+│   └── session/                # session persistence
 ├── integrations/
 │   ├── domain/                 # external domain client + schema
+│   ├── llm/                    # provider registry and clients
 │   └── skills/                 # skill invocation + repo
-├── internal/
-│   └── project/
-│       ├── roadmap.go
-│       └── weekly.go
+├── internal/project/           # roadmap and weekly helpers
+├── permission/                 # permission engine
+├── runtime/shell/              # low-level shell runner
 ├── tools/
 │   ├── fs/                     # filesystem operations
-│   └── shell/                  # shell command runner
-├── trace/
-│   └── writer.go               # execution trace logging
-├── report/
-│   └── summary.go              # report generation
+│   └── shell/                  # shell tool wrapper
+├── trace/                      # execution trace logging
+├── report/                     # report generation
 ├── ui/
 │   ├── app.go                  # root Bubble Tea model
-│   ├── model/model.go          # shared state types
 │   ├── components/             # spinner, textinput, viewport
-│   └── panels/                 # topbar, chat, hintbar
+│   ├── model/                  # shared state types
+│   ├── panels/                 # topbar, chat, hintbar
+│   └── slash/                  # slash command handling
+├── configs/                    # config loading and shared types
+├── test/mocks/                 # test doubles
 ├── docs/
 │   ├── roadmap/ROADMAP.md
+│   ├── ms-cli-arch.md
 │   └── updates/
+├── examples/
 ├── go.mod
 └── README.md
 ```
@@ -187,4 +189,4 @@ context:
 
 ## Architecture Rule
 
-UI listens to events; agent loop emits events; executor/tools do not depend on UI.
+UI listens to events; agent loop emits events; tool execution does not depend on UI.

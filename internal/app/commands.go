@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vigo999/ms-cli/agent/orchestrator"
 	"github.com/vigo999/ms-cli/internal/project"
 	"github.com/vigo999/ms-cli/permission"
 	"github.com/vigo999/ms-cli/ui/model"
 )
 
-// handleCommand dispatches slash commands.
 func (a *Application) handleCommand(input string) {
 	parts := strings.Fields(input)
 	if len(parts) == 0 {
@@ -24,6 +24,8 @@ func (a *Application) handleCommand(input string) {
 		a.cmdRoadmap(parts[1:])
 	case "/weekly":
 		a.cmdWeekly(parts[1:])
+	case "/mode":
+		a.cmdMode(parts[1:])
 	case "/model":
 		a.cmdModel(parts[1:])
 	case "/exit":
@@ -50,7 +52,22 @@ func (a *Application) handleCommand(input string) {
 	}
 }
 
-// cmdRoadmap handles "/roadmap status [path]".
+func (a *Application) cmdMode(args []string) {
+	if len(args) == 0 {
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: fmt.Sprintf("Current mode: %s\n\nUsage: /mode [standard|plan]", a.Orchestrator.CurrentMode()),
+		}
+		return
+	}
+	mode := orchestrator.ParseRunMode(args[0])
+	a.Orchestrator.SetMode(mode)
+	a.EventCh <- model.Event{
+		Type:    model.AgentReply,
+		Message: fmt.Sprintf("Switched to %s mode", mode),
+	}
+}
+
 func (a *Application) cmdRoadmap(args []string) {
 	if len(args) == 0 || args[0] != "status" {
 		a.EventCh <- model.Event{
@@ -69,32 +86,20 @@ func (a *Application) cmdRoadmap(args []string) {
 
 	rm, err := project.LoadRoadmapFromFile(path)
 	if err != nil {
-		a.EventCh <- model.Event{
-			Type:     model.ToolError,
-			ToolName: "roadmap",
-			Message:  err.Error(),
-		}
+		a.EventCh <- model.Event{Type: model.ToolError, ToolName: "roadmap", Message: err.Error()}
 		return
 	}
 
 	status, err := project.ComputeRoadmapStatus(rm, time.Now())
 	if err != nil {
-		a.EventCh <- model.Event{
-			Type:     model.ToolError,
-			ToolName: "roadmap",
-			Message:  err.Error(),
-		}
+		a.EventCh <- model.Event{Type: model.ToolError, ToolName: "roadmap", Message: err.Error()}
 		return
 	}
 
 	data, _ := json.MarshalIndent(status, "", "  ")
-	a.EventCh <- model.Event{
-		Type:    model.AgentReply,
-		Message: string(data),
-	}
+	a.EventCh <- model.Event{Type: model.AgentReply, Message: string(data)}
 }
 
-// cmdWeekly handles "/weekly status [path]".
 func (a *Application) cmdWeekly(args []string) {
 	if len(args) == 0 || args[0] != "status" {
 		a.EventCh <- model.Event{
@@ -113,30 +118,20 @@ func (a *Application) cmdWeekly(args []string) {
 
 	wu, err := project.LoadWeeklyUpdateFromFile(path)
 	if err != nil {
-		a.EventCh <- model.Event{
-			Type:     model.ToolError,
-			ToolName: "weekly",
-			Message:  err.Error(),
-		}
+		a.EventCh <- model.Event{Type: model.ToolError, ToolName: "weekly", Message: err.Error()}
 		return
 	}
 
 	data, _ := json.MarshalIndent(wu, "", "  ")
-	a.EventCh <- model.Event{
-		Type:    model.AgentReply,
-		Message: string(data),
-	}
+	a.EventCh <- model.Event{Type: model.AgentReply, Message: string(data)}
 }
 
-// cmdModel handles "/model [model-name]".
 func (a *Application) cmdModel(args []string) {
 	if len(args) == 0 {
-		// Show current model config.
 		a.showCurrentModel()
 		return
 	}
 
-	// Accept "openai:model" for backward compatibility.
 	modelArg := args[0]
 	if strings.Contains(modelArg, ":") {
 		parts := strings.SplitN(modelArg, ":", 2)
@@ -153,11 +148,9 @@ func (a *Application) cmdModel(args []string) {
 		return
 	}
 
-	// Just switch model.
 	a.switchModel(modelArg)
 }
 
-// showCurrentModel displays current URL/model/key status.
 func (a *Application) showCurrentModel() {
 	modelName := a.Config.Model.Model
 	url := a.Config.Model.URL
@@ -167,8 +160,8 @@ func (a *Application) showCurrentModel() {
 
 	apiKeyStatus := "not set"
 	if a.Config.Model.Key != "" ||
-		getEnv("MSCLI_API_KEY") != "" ||
-		getEnv("OPENAI_API_KEY") != "" {
+		os.Getenv("MSCLI_API_KEY") != "" ||
+		os.Getenv("OPENAI_API_KEY") != "" {
 		apiKeyStatus = "set"
 	}
 
@@ -184,16 +177,11 @@ To switch model:
 
 Examples:
   /model gpt-4o
-  /model openai:gpt-4o-mini`,
-		url, modelName, apiKeyStatus)
+  /model openai:gpt-4o-mini`, url, modelName, apiKeyStatus)
 
-	a.EventCh <- model.Event{
-		Type:    model.AgentReply,
-		Message: msg,
-	}
+	a.EventCh <- model.Event{Type: model.AgentReply, Message: msg}
 }
 
-// switchModel switches to a new model.
 func (a *Application) switchModel(modelName string) {
 	a.EventCh <- model.Event{Type: model.AgentThinking}
 
@@ -207,13 +195,8 @@ func (a *Application) switchModel(modelName string) {
 		return
 	}
 
-	// Update UI model name
-	a.EventCh <- model.Event{
-		Type:    model.ModelUpdate,
-		Message: a.Config.Model.Model,
-	}
+	a.EventCh <- model.Event{Type: model.ModelUpdate, Message: a.Config.Model.Model}
 
-	// Save state to disk
 	if err := a.SaveState(); err != nil {
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
@@ -228,32 +211,18 @@ func (a *Application) switchModel(modelName string) {
 	}
 }
 
-// getEnv is a helper to get environment variable.
-func getEnv(key string) string {
-	return os.Getenv(key)
-}
-
-// cmdExit handles "/exit".
 func (a *Application) cmdExit() {
-	a.EventCh <- model.Event{
-		Type:    model.AgentReply,
-		Message: "Goodbye!",
-	}
-	// Send Done event to close the UI
+	a.EventCh <- model.Event{Type: model.AgentReply, Message: "Goodbye!"}
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		a.EventCh <- model.Event{Type: model.Done}
 	}()
 }
 
-// cmdCompact handles "/compact".
 func (a *Application) cmdCompact() {
 	a.EventCh <- model.Event{Type: model.AgentThinking}
 
-	// Trigger context compaction through the engine
 	if a.Engine != nil {
-		// In a real implementation, this would compact the conversation context
-		// For now, just show a message
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
 			Message: "Context compacted. Conversation summary has been created to save tokens.",
@@ -266,20 +235,13 @@ func (a *Application) cmdCompact() {
 	}
 }
 
-// cmdClear handles "/clear".
 func (a *Application) cmdClear() {
-	// Clear all messages by sending a special event
-	a.EventCh <- model.Event{
-		Type:    model.ClearScreen,
-		Message: "Chat history cleared.",
-	}
+	a.EventCh <- model.Event{Type: model.ClearScreen, Message: "Chat history cleared."}
 }
 
-// cmdTest handles "/test" - tests API connectivity.
 func (a *Application) cmdTest() {
 	a.EventCh <- model.Event{Type: model.AgentThinking}
 
-	// Get current model config.
 	modelName := a.Config.Model.Model
 	url := a.Config.Model.URL
 	if url == "" {
@@ -287,34 +249,20 @@ func (a *Application) cmdTest() {
 	}
 	apiKeyStatus := "not set"
 	if a.Config.Model.Key != "" {
-		apiKeyStatus = "set (" + fmt.Sprintf("%d chars", len(a.Config.Model.Key)) + ")"
+		apiKeyStatus = fmt.Sprintf("set (%d chars)", len(a.Config.Model.Key))
 	}
 
-	msg := fmt.Sprintf(`API Connection Test:
+	msg := fmt.Sprintf("API Connection Test:\n\n  URL:     %s\n  Model:   %s\n  API Key: %s\n\nTesting connectivity...",
+		url, modelName, apiKeyStatus)
+	a.EventCh <- model.Event{Type: model.AgentReply, Message: msg}
 
-  URL:     %s
-  Model:   %s
-  API Key: %s
-
-Testing connectivity...`, url, modelName, apiKeyStatus)
-
-	a.EventCh <- model.Event{
-		Type:    model.AgentReply,
-		Message: msg,
-	}
-
-	// Try a simple completion to test the API
 	if a.Engine != nil && !a.Demo && a.llmReady {
-		// The actual test will happen when the user sends a message
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
 			Message: "API configuration looks correct. Send a message to test the connection.",
 		}
 	} else if !a.Demo && !a.llmReady {
-		a.EventCh <- model.Event{
-			Type:    model.AgentReply,
-			Message: provideAPIKeyFirstMsg,
-		}
+		a.EventCh <- model.Event{Type: model.AgentReply, Message: provideAPIKeyFirstMsg}
 	} else {
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
@@ -323,7 +271,6 @@ Testing connectivity...`, url, modelName, apiKeyStatus)
 	}
 }
 
-// cmdPermission handles "/permission [tool] [level]".
 func (a *Application) cmdPermission(args []string) {
 	permSvc, ok := a.permService.(*permission.DefaultPermissionService)
 	if !ok {
@@ -335,7 +282,6 @@ func (a *Application) cmdPermission(args []string) {
 	}
 
 	if len(args) == 0 {
-		// Show current permissions
 		policies := permSvc.GetPolicies()
 		msg := "Current Permission Settings:\n\n"
 		if len(policies) == 0 {
@@ -346,18 +292,10 @@ func (a *Application) cmdPermission(args []string) {
 				msg += fmt.Sprintf("  %s: %s\n", tool, level)
 			}
 		}
-		msg += "\nUsage:\n"
-		msg += "  /permission <tool> <level>\n"
-		msg += "\nLevels:\n"
-		msg += "  ask         - Ask each time (default)\n"
-		msg += "  allow_once  - Allow once\n"
-		msg += "  allow_session - Allow for this session\n"
-		msg += "  allow_always - Always allow\n"
-		msg += "  deny        - Always deny\n"
-		msg += "\nTools: read, write, edit, grep, glob, shell\n"
-		msg += "\nExamples:\n"
-		msg += "  /permission shell ask\n"
-		msg += "  /permission write allow_always"
+		msg += "\nUsage:\n  /permission <tool> <level>\n"
+		msg += "\nLevels: ask, allow_once, allow_session, allow_always, deny\n"
+		msg += "Tools: read, write, edit, grep, glob, shell\n"
+		msg += "\nExamples:\n  /permission shell ask\n  /permission write allow_always"
 		a.EventCh <- model.Event{Type: model.AgentReply, Message: msg}
 		return
 	}
@@ -371,9 +309,7 @@ func (a *Application) cmdPermission(args []string) {
 	}
 
 	tool := args[0]
-	levelStr := args[1]
-	level := permission.ParsePermissionLevel(levelStr)
-
+	level := permission.ParsePermissionLevel(args[1])
 	permSvc.Grant(tool, level)
 
 	a.EventCh <- model.Event{
@@ -382,7 +318,6 @@ func (a *Application) cmdPermission(args []string) {
 	}
 }
 
-// cmdYolo handles "/yolo" - toggles auto-approve mode.
 func (a *Application) cmdYolo() {
 	permSvc, ok := a.permService.(*permission.DefaultPermissionService)
 	if !ok {
@@ -393,19 +328,16 @@ func (a *Application) cmdYolo() {
 		return
 	}
 
-	// Check current state by looking at shell permission
 	current := permSvc.Check("shell", "")
 	if current == permission.PermissionAllowAlways {
-		// Disable yolo mode
 		permSvc.Grant("shell", permission.PermissionAsk)
 		permSvc.Grant("write", permission.PermissionAsk)
 		permSvc.Grant("edit", permission.PermissionAsk)
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
-			Message: "🔒 YOLO mode disabled. Will ask for confirmation on destructive operations.",
+			Message: "YOLO mode disabled. Will ask for confirmation on destructive operations.",
 		}
 	} else {
-		// Enable yolo mode
 		permSvc.Grant("shell", permission.PermissionAllowAlways)
 		permSvc.Grant("write", permission.PermissionAllowAlways)
 		permSvc.Grant("edit", permission.PermissionAllowAlways)
@@ -414,12 +346,11 @@ func (a *Application) cmdYolo() {
 		permSvc.Grant("glob", permission.PermissionAllowAlways)
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
-			Message: "⚡ YOLO mode enabled! All operations will be auto-approved. Use with caution!",
+			Message: "YOLO mode enabled! All operations will be auto-approved. Use with caution!",
 		}
 	}
 }
 
-// cmdMouse handles "/mouse [on|off|toggle|status]".
 func (a *Application) cmdMouse(args []string) {
 	mode := "toggle"
 	if len(args) > 0 {
@@ -449,10 +380,10 @@ func (a *Application) cmdMouse(args []string) {
 	}
 }
 
-// cmdHelp handles "/help".
 func (a *Application) cmdHelp() {
 	helpText := `Available commands:
 
+  /mode [standard|plan]   Show or switch execution mode
   /roadmap status [path]  Check roadmap status (default: roadmap.yaml)
   /weekly status [path]   Check weekly update status (default: weekly.md)
   /model [model-name]     Show or switch model
@@ -484,7 +415,6 @@ Permission Levels:
 
 Keybindings:
   enter      Send input
-  ↑/↓        Navigate slash suggestions
   mouse wheel Scroll chat
   pgup/pgdn  Scroll chat
   home/end   Jump to top/bottom
@@ -499,8 +429,5 @@ Environment Variables:
   OPENAI_MODEL            Model (fallback)
   OPENAI_API_KEY          API key (fallback)`
 
-	a.EventCh <- model.Event{
-		Type:    model.AgentReply,
-		Message: helpText,
-	}
+	a.EventCh <- model.Event{Type: model.AgentReply, Message: helpText}
 }

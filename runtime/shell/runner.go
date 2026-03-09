@@ -1,3 +1,5 @@
+// Package shell provides shell command execution with workspace context,
+// environment management, timeouts, and safety checks.
 package shell
 
 import (
@@ -30,7 +32,7 @@ type Result struct {
 	Error    error
 }
 
-// Runner executes shell commands.
+// Runner executes shell commands within a configured workspace.
 type Runner struct {
 	config Config
 }
@@ -50,7 +52,6 @@ func NewRunner(cfg Config) *Runner {
 
 // Run executes a command and returns the result.
 func (r *Runner) Run(ctx context.Context, command string) (*Result, error) {
-	// Check if command is allowed
 	if reason := r.checkAllowed(command); reason != "" {
 		return &Result{
 			ExitCode: -1,
@@ -68,10 +69,8 @@ func (r *Runner) Run(ctx context.Context, command string) (*Result, error) {
 		return cmd
 	}
 
-	// Create command
 	cmd := buildCmd(ctx)
 
-	// Run with timeout if context doesn't have one
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline && r.config.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, r.config.Timeout)
@@ -79,7 +78,6 @@ func (r *Runner) Run(ctx context.Context, command string) (*Result, error) {
 		cmd = buildCmd(ctx)
 	}
 
-	// Capture output
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("create stdout pipe: %w", err)
@@ -90,12 +88,10 @@ func (r *Runner) Run(ctx context.Context, command string) (*Result, error) {
 		return nil, fmt.Errorf("create stderr pipe: %w", err)
 	}
 
-	// Start command
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start command: %w", err)
 	}
 
-	// Read output
 	var stdoutOut, stderrOut string
 	var stdoutErr, stderrErr error
 
@@ -111,7 +107,6 @@ func (r *Runner) Run(ctx context.Context, command string) (*Result, error) {
 		close(stderrDone)
 	}()
 
-	// Wait for output readers
 	<-stdoutDone
 	<-stderrDone
 	if stdoutErr != nil {
@@ -121,7 +116,6 @@ func (r *Runner) Run(ctx context.Context, command string) (*Result, error) {
 		return nil, fmt.Errorf("read stderr: %w", stderrErr)
 	}
 
-	// Wait for command
 	err = cmd.Wait()
 
 	result := &Result{
@@ -190,7 +184,6 @@ func (r *Runner) IsDangerous(command string) bool {
 		}
 	}
 
-	// Check destructive rm commands
 	if strings.HasPrefix(lower, "rm ") && strings.Contains(lower, "-rf") {
 		return true
 	}
@@ -203,14 +196,12 @@ func (r *Runner) checkAllowed(command string) string {
 	cmd := strings.TrimSpace(command)
 	lower := strings.ToLower(cmd)
 
-	// Check blacklist
 	for _, blocked := range r.config.BlockedCmds {
 		if strings.Contains(lower, strings.ToLower(blocked)) {
 			return fmt.Sprintf("matches blocked pattern: %s", blocked)
 		}
 	}
 
-	// Check whitelist (if defined)
 	if len(r.config.AllowedCmds) > 0 {
 		allowed := false
 		for _, allowedCmd := range r.config.AllowedCmds {
@@ -237,7 +228,6 @@ func (r *Runner) RequiresConfirm(command string) bool {
 		}
 	}
 
-	// Check for destructive commands
 	destructive := []string{"rm ", "mv ", "cp -r", "> ", ">> "}
 	for _, d := range destructive {
 		if strings.HasPrefix(cmd, d) {
@@ -255,7 +245,6 @@ func (r *Runner) GetWorkDir() string {
 
 // SanitizePath sanitizes a path for use in commands.
 func SanitizePath(path string) string {
-	// Prevent command injection
 	path = strings.ReplaceAll(path, ";", "")
 	path = strings.ReplaceAll(path, "&", "")
 	path = strings.ReplaceAll(path, "|", "")
