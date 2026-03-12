@@ -66,16 +66,14 @@ func (d *DemoBackend) Setup(ctx context.Context, req itrain.Request, sink func(E
 
 // Run plays back the demo training scenario: log lines + metrics + completion.
 func (d *DemoBackend) Run(ctx context.Context, session *Session, sink func(Event)) error {
-	return d.runTraining(ctx, session.Model, session.Method, sink, session.FailAtStep)
+	return d.runTraining(ctx, session.Model, session.Method, sink, session.FailAtStep, session.PerfFixed, session.TrickApplied)
 }
 
 // runTraining plays demo training: loading, log lines, metrics, completion.
-// If failAtStep > 0, training crashes at that step with a DSA operator error.
-func (d *DemoBackend) runTraining(ctx context.Context, model, method string, sink func(Event), failAtStep ...int) error {
-	failStep := 0
-	if len(failAtStep) > 0 {
-		failStep = failAtStep[0]
-	}
+// If failStep > 0, training crashes at that step with a DSA operator error.
+// If perfFixed is true, throughput is ~10% higher (fused adam kernel).
+// If trickApplied is true, loss converges faster (MHC contrastive loss).
+func (d *DemoBackend) runTraining(ctx context.Context, model, method string, sink func(Event), failStep int, perfFixed, trickApplied bool) error {
 	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
 
 	runID := fmt.Sprintf("train-%s", time.Now().Format("0102-150405"))
@@ -88,6 +86,16 @@ func (d *DemoBackend) runTraining(ctx context.Context, model, method string, sin
 	}
 	if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Loading dataset: alpaca_gpt4_zh (52,002 samples)", runID), DelayMs: 400}) {
 		return ctx.Err()
+	}
+	if perfFixed {
+		if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Optimizer: fused_adam (custom kernel)", runID), DelayMs: 300}) {
+			return ctx.Err()
+		}
+	}
+	if trickApplied {
+		if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Algo-feature: MHC (multi-head contrastive) enabled", runID), DelayMs: 300}) {
+			return ctx.Err()
+		}
 	}
 	if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Graph compilation... OK", runID), DelayMs: 800}) {
 		return ctx.Err()
@@ -102,16 +110,59 @@ func (d *DemoBackend) runTraining(ctx context.Context, model, method string, sin
 		lr         float64
 		throughput float64
 	}
-	steps := []snap{
-		{10, 2.891, 2.0e-4, 487.2},
-		{25, 2.374, 2.0e-4, 512.8},
-		{50, 1.956, 1.8e-4, 518.3},
-		{75, 1.638, 1.5e-4, 516.7},
-		{100, 1.401, 1.2e-4, 519.1},
-		{150, 1.142, 8.0e-5, 517.4},
-		{200, 0.964, 5.0e-5, 518.9},
-		{250, 0.882, 3.0e-5, 519.2},
-		{300, 0.831, 2.0e-5, 518.5},
+
+	// Select step data based on applied optimizations.
+	// Base throughput ~518, perfFixed ~571, trickApplied lowers final loss.
+	var steps []snap
+	switch {
+	case perfFixed && trickApplied:
+		steps = []snap{
+			{10, 2.812, 2.0e-4, 536.1},
+			{25, 2.241, 2.0e-4, 564.3},
+			{50, 1.823, 1.8e-4, 570.5},
+			{75, 1.487, 1.5e-4, 568.2},
+			{100, 1.248, 1.2e-4, 571.4},
+			{150, 0.981, 8.0e-5, 569.8},
+			{200, 0.824, 5.0e-5, 571.1},
+			{250, 0.762, 3.0e-5, 571.5},
+			{300, 0.718, 2.0e-5, 570.7},
+		}
+	case perfFixed:
+		steps = []snap{
+			{10, 2.891, 2.0e-4, 536.1},
+			{25, 2.374, 2.0e-4, 564.3},
+			{50, 1.956, 1.8e-4, 570.5},
+			{75, 1.638, 1.5e-4, 568.2},
+			{100, 1.401, 1.2e-4, 571.4},
+			{150, 1.142, 8.0e-5, 569.8},
+			{200, 0.964, 5.0e-5, 571.1},
+			{250, 0.882, 3.0e-5, 571.5},
+			{300, 0.831, 2.0e-5, 570.7},
+		}
+	case trickApplied:
+		steps = []snap{
+			{10, 2.812, 2.0e-4, 487.2},
+			{25, 2.241, 2.0e-4, 512.8},
+			{50, 1.823, 1.8e-4, 518.3},
+			{75, 1.487, 1.5e-4, 516.7},
+			{100, 1.248, 1.2e-4, 519.1},
+			{150, 0.981, 8.0e-5, 517.4},
+			{200, 0.824, 5.0e-5, 518.9},
+			{250, 0.762, 3.0e-5, 519.2},
+			{300, 0.718, 2.0e-5, 518.5},
+		}
+	default:
+		steps = []snap{
+			{10, 2.891, 2.0e-4, 487.2},
+			{25, 2.374, 2.0e-4, 512.8},
+			{50, 1.956, 1.8e-4, 518.3},
+			{75, 1.638, 1.5e-4, 516.7},
+			{100, 1.401, 1.2e-4, 519.1},
+			{150, 1.142, 8.0e-5, 517.4},
+			{200, 0.964, 5.0e-5, 518.9},
+			{250, 0.882, 3.0e-5, 519.2},
+			{300, 0.831, 2.0e-5, 518.5},
+		}
 	}
 
 	totalSteps := 300
@@ -145,7 +196,9 @@ func (d *DemoBackend) runTraining(ctx context.Context, model, method string, sin
 // RunSingleLaneEval simulates post-training evaluation.
 // When driftFixed is false, it detects accuracy drift (first run).
 // When driftFixed is true, evaluation passes (after accuracy fix).
-func RunSingleLaneEval(ctx context.Context, model, method string, driftFixed bool, sink func(Event)) error {
+// When perfFixed is true, a perf comparison summary is included.
+// When trickApplied is true, accuracy exceeds baseline.
+func RunSingleLaneEval(ctx context.Context, model, method string, driftFixed, perfFixed, trickApplied bool, sink func(Event)) error {
 	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
 
 	if !e(Event{Kind: EventEvalStarted, Message: "Evaluating model on ceval-valid benchmark...", DelayMs: 800}) {
@@ -162,29 +215,60 @@ func RunSingleLaneEval(ctx context.Context, model, method string, driftFixed boo
 	}
 
 	if driftFixed {
-		// After accuracy fix: eval passes
-		if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Trained model accuracy: 71.8%%", evalRunID), DelayMs: 500}) {
+		// After accuracy fix: eval passes. Trick improves accuracy further.
+		candidateAcc := 71.8
+		driftPts := -0.3
+		if trickApplied {
+			candidateAcc = 73.6
+			driftPts = 1.5
+		}
+
+		if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Trained model accuracy: %.1f%%", evalRunID, candidateAcc), DelayMs: 500}) {
 			return ctx.Err()
 		}
-		if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Accuracy drift: -0.3 pts (within tolerance)", evalRunID), DelayMs: 400}) {
-			return ctx.Err()
+		if trickApplied {
+			if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Accuracy gain: +%.1f pts over baseline (MHC algo-feature)", evalRunID, driftPts), DelayMs: 400}) {
+				return ctx.Err()
+			}
+		} else {
+			if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Accuracy drift: %.1f pts (within tolerance)", evalRunID, driftPts), DelayMs: 400}) {
+				return ctx.Err()
+			}
 		}
 		if !e(Event{
 			Kind:         EventEvalCompleted,
 			Message:      "Evaluation complete. Accuracy within tolerance.",
 			BaselineAcc:  72.1,
-			CandidateAcc: 71.8,
-			Drift:        -0.3,
+			CandidateAcc: candidateAcc,
+			Drift:        driftPts,
 			DelayMs:      500,
 		}) {
 			return ctx.Err()
 		}
+		if perfFixed {
+			if !e(Event{Kind: EventLogLine, Message: fmt.Sprintf("[%s] Perf: avg step latency 250ms (was 400ms), reduced 150ms with fused_adam", evalRunID), DelayMs: 500}) {
+				return ctx.Err()
+			}
+		}
+
+		// Verification message based on what was applied
+		var verifyMsg string
+		switch {
+		case trickApplied && perfFixed:
+			verifyMsg = fmt.Sprintf("Verified. MHC algo-feature boosted accuracy to %.1f%% (+%.1f pts). Latency reduced 150ms with fused_adam.", candidateAcc, driftPts)
+		case trickApplied:
+			verifyMsg = fmt.Sprintf("Verified. MHC algo-feature boosted accuracy to %.1f%% (+%.1f pts over 72.1%% baseline).", candidateAcc, driftPts)
+		case perfFixed:
+			verifyMsg = fmt.Sprintf("Verified. Latency reduced 150ms (400ms → 250ms) with fused_adam. Accuracy stable at %.1f%%.", candidateAcc)
+		default:
+			verifyMsg = fmt.Sprintf("Accuracy verified. Model scores %.1f%% vs 72.1%% baseline on ceval-valid. Drift: %.1f pts.", candidateAcc, driftPts)
+		}
 		if !e(Event{
 			Kind:         EventVerificationPassed,
-			Message:      "Accuracy verified. Model scores 71.8% vs 72.1% baseline on ceval-valid. Drift: -0.3 pts.",
+			Message:      verifyMsg,
 			BaselineAcc:  72.1,
-			CandidateAcc: 71.8,
-			Drift:        -0.3,
+			CandidateAcc: candidateAcc,
+			Drift:        driftPts,
 			DelayMs:      500,
 		}) {
 			return ctx.Err()
@@ -303,6 +387,126 @@ func ApplySingleLaneDriftFix(ctx context.Context, model, method string, sink fun
 		IssueType:  "accuracy",
 		FixSummary: "Softmax dtype patched to bf16",
 		Message:    "acc-agent: patch added. please rerun experiment.",
+		DelayMs:    1500,
+	}) {
+		return ctx.Err()
+	}
+
+	return nil
+}
+
+// ── Story 5: Single-lane algo-feature iteration ──────────────
+
+// RunSingleLaneAlgoFeature applies an algo-feature (e.g. MHC) and prepares for rerun.
+func RunSingleLaneAlgoFeature(ctx context.Context, model, method, feature string, sink func(Event)) error {
+	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
+
+	if feature == "" {
+		feature = "mhc"
+	}
+
+	if !e(Event{Kind: EventMessage, Message: fmt.Sprintf("algo-agent: evaluating %s (multi-head contrastive) for %s %s...", feature, model, method), DelayMs: 800}) {
+		return ctx.Err()
+	}
+
+	if !e(Event{Kind: EventMessage, Message: fmt.Sprintf("algo-agent: %s enabled. inject contrastive loss on attention heads to improve generalization.", feature), DelayMs: 800}) {
+		return ctx.Err()
+	}
+
+	if !e(Event{
+		Kind:       EventFixApplied,
+		IssueType:  "algo-feature",
+		FixSummary: fmt.Sprintf("MHC algo-feature applied to %s %s", model, method),
+		Message:    "algo-agent: config patched. please rerun experiment.",
+		DelayMs:    1000,
+	}) {
+		return ctx.Err()
+	}
+
+	return nil
+}
+
+// ── Story 4: Single-lane performance recovery ────────────────
+
+// AnalyzeSingleLanePerf diagnoses a performance bottleneck for the single-lane flow.
+func AnalyzeSingleLanePerf(ctx context.Context, model, method string, sink func(Event)) error {
+	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
+
+	if !e(Event{Kind: EventAnalysisStarted, Message: "Analyzing performance...", IssueType: "performance", DelayMs: 500}) {
+		return ctx.Err()
+	}
+
+	if !e(Event{Kind: EventMessage, Message: "perf-agent: profiling whole models and ops...", DelayMs: 800}) {
+		return ctx.Err()
+	}
+
+	if !e(Event{Kind: EventMessage, Message: "perf-agent: root cause found, adam optimizer spent 400ms which is abnormal.", DelayMs: 800}) {
+		return ctx.Err()
+	}
+
+	if !e(Event{
+		Kind:         EventActionSuggested,
+		IssueType:    "performance",
+		IssueID:      "perf-adam-latency",
+		ActionID:     "fix-fused-adam",
+		ActionKind:   "apply_patch",
+		ActionLabel:  "apply fix",
+		ActionSource: "perf-agent",
+		Message:      "perf-agent: suggest to replace with fused_adam kernel which will boost around 10%.",
+		DelayMs:      500,
+	}) {
+		return ctx.Err()
+	}
+
+	diffText := `--- a/configs/qwen3_lora.yaml
++++ b/configs/qwen3_lora.yaml
+@@ -22,3 +22,4 @@
+ optimizer:
+-  type: "adam"
++  type: "fused_adam"
++  fused_kernel: True  # custom fused adam kernel for Ascend 910B`
+
+	if !e(Event{
+		Kind:        EventAnalysisReady,
+		IssueType:   "performance",
+		IssueID:     "perf-adam-latency",
+		IssueTitle:  "Adam optimizer latency bottleneck (400ms per step)",
+		IssueDetail: "Standard adam optimizer takes 400ms per step. Fused adam kernel reduces this to ~250ms, boosting throughput by ~10%.",
+		Confidence:  "high",
+		FixSummary:  "Replace adam with fused_adam kernel",
+		DiffText:    diffText,
+		ActionID:    "fix-fused-adam",
+		ActionKind:  "apply_patch",
+		ActionLabel: "apply fix",
+		Message:     "Analysis complete. Ready to apply fix.",
+		DelayMs:     400,
+	}) {
+		return ctx.Err()
+	}
+
+	return nil
+}
+
+// ApplySingleLanePerfFix applies the performance fix (no rerun — user clicks rerun).
+func ApplySingleLanePerfFix(ctx context.Context, model, method string, sink func(Event)) error {
+	e := func(ev Event) bool { return emit(ctx, sink, withDefaultRunID(ev)) }
+
+	if !e(Event{
+		Kind:       EventActionApplied,
+		IssueType:  "performance",
+		ActionID:   "fix-fused-adam",
+		ActionKind: "apply_patch",
+		Message:    "op-agent: replacing normal adam with fused kernel...",
+		DelayMs:    2000,
+	}) {
+		return ctx.Err()
+	}
+
+	if !e(Event{
+		Kind:       EventFixApplied,
+		IssueType:  "performance",
+		FixSummary: "Replaced adam with fused_adam kernel",
+		Message:    "op-agent: kernel replaced. please rerun experiment.",
 		DelayMs:    1500,
 	}) {
 		return ctx.Err()

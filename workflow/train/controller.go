@@ -47,6 +47,12 @@ func (c *Controller) Open(_ context.Context, req itrain.Request) *Session {
 	if fixed, ok := req.Target.Config["demo_drift_fixed"].(bool); ok && fixed {
 		s.DriftFixed = true
 	}
+	if fixed, ok := req.Target.Config["demo_perf_fixed"].(bool); ok && fixed {
+		s.PerfFixed = true
+	}
+	if applied, ok := req.Target.Config["demo_trick_applied"].(bool); ok && applied {
+		s.TrickApplied = true
+	}
 	return s
 }
 

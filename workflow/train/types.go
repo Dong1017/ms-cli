@@ -106,4 +106,12 @@ type Session struct {
 	// DriftFixed indicates the accuracy fix has been applied,
 	// so post-training eval should pass instead of detecting drift.
 	DriftFixed bool
+
+	// PerfFixed indicates the performance fix has been applied,
+	// so training runs with improved throughput on rerun.
+	PerfFixed bool
+
+	// TrickApplied indicates a training trick (e.g. MHC) was added,
+	// so training shows improved loss and eval shows better accuracy.
+	TrickApplied bool
 }

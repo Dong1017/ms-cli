@@ -17,6 +17,105 @@ type trainSnapshot struct {
 	issueType string
 }
 
+// trainTextAliases maps free-form sentences to canonical commands.
+// Used for demo: the user can type natural phrases instead of exact commands.
+var trainTextAliases = map[string]string{
+	// start / rerun
+	"run it":              "start",
+	"run the training":    "start",
+	"rerun":               "start",
+	"rerun training":      "start",
+	"rerun experiment":    "start",
+	"go":                  "start",
+	"launch":              "start",
+	"start it":            "start",
+	"start it up":         "start",
+	"run again":           "start",
+	"run it again":        "start",
+	"begin":               "start",
+	"begin training":      "start",
+	"let's go":            "start",
+	"let's run it":        "start",
+	"kick it off":         "start",
+	"proceed":             "start",
+	"execute":             "start",
+	"run experiment":      "start",
+	"start the run":       "start",
+	// analyze / diagnose
+	"analysis":            "analyze",
+	"what went wrong":     "analyze",
+	"check the error":     "analyze",
+	"investigate":         "analyze",
+	"why did it fail":     "analyze",
+	"check failure":       "analyze",
+	"what happened":       "analyze",
+	"debug":               "analyze",
+	"debug it":            "analyze",
+	"analyze it":          "analyze",
+	"look into it":        "analyze",
+	"check it":            "analyze",
+	"find the problem":    "analyze",
+	"what's the issue":    "analyze",
+	"what's wrong":        "analyze",
+	"show me the error":   "analyze",
+	"explain the failure": "analyze",
+	"figure it out":       "analyze",
+	// diagnose (explicit)
+	"diagnose it":         "diagnose",
+	"find the issue":      "diagnose",
+	"root cause":          "diagnose",
+	"diagnose the issue":  "diagnose",
+	// retry
+	"try again":           "retry",
+	"one more time":       "retry",
+	"retry it":            "retry",
+	// apply fix (confirmation words like "yes"/"ok"/"do it" are
+	// handled in the UI layer — they fire the current focused button)
+	"fix it":              "apply fix",
+	"apply the fix":       "apply fix",
+	"patch it":            "apply fix",
+	"apply":               "apply fix",
+	"apply patch":         "apply fix",
+	"apply the change":    "apply fix",
+	"make the change":     "apply fix",
+	// analyze perf
+	"check performance":   "analyze perf",
+	"profile it":          "analyze perf",
+	"why is it slow":      "analyze perf",
+	"check perf":          "analyze perf",
+	"perf analysis":       "analyze perf",
+	"optimize":            "analyze perf",
+	"optimize it":         "analyze perf",
+	"make it faster":      "analyze perf",
+	"speed it up":         "analyze perf",
+	"check throughput":    "analyze perf",
+	"check speed":         "analyze perf",
+	"profile":             "analyze perf",
+	"tune performance":    "analyze perf",
+	"bottleneck":          "analyze perf",
+	"why slow":            "analyze perf",
+	// algo-feature
+	"add mhc":             "add algo-feature mhc",
+	"try mhc":             "add algo-feature mhc",
+	"enable mhc":          "add algo-feature mhc",
+	"apply mhc":           "add algo-feature mhc",
+	"use mhc":             "add algo-feature mhc",
+	"mhc":                 "add algo-feature mhc",
+	"add algo-feature":    "add algo-feature mhc",
+	"add feature":         "add algo-feature mhc",
+	"add a technique":     "add algo-feature mhc",
+	"try a new technique": "add algo-feature mhc",
+	"improve accuracy":    "add algo-feature mhc",
+	"boost accuracy":      "add algo-feature mhc",
+	// stop
+	"cancel":              "stop",
+	"abort":               "stop",
+	"stop it":             "stop",
+	"halt":                "stop",
+	"kill it":             "stop",
+	"stop training":       "stop",
+}
+
 type bootstrapRunState struct {
 	Applied         map[string]bool
 	PendingActionID string
@@ -158,7 +257,11 @@ func (a *Application) runAnalysis(ctx context.Context, runID uint64, req train.R
 			err = wtrain.RunDriftAnalysis(ctx, req.Model, req.Method, sink)
 		}
 	case "performance":
-		err = wtrain.RunPerformanceAnalysis(ctx, req.Model, req.Method, sink)
+		if a.trainController != nil {
+			err = wtrain.AnalyzeSingleLanePerf(ctx, req.Model, req.Method, sink)
+		} else {
+			err = wtrain.RunPerformanceAnalysis(ctx, req.Model, req.Method, sink)
+		}
 	default:
 		err = wtrain.AnalyzeFailure(ctx, req.Model, req.Method, sink)
 	}
@@ -190,7 +293,11 @@ func (a *Application) runApplyFix(ctx context.Context, runID uint64, req train.R
 			err = wtrain.RunDriftFixAndRerun(ctx, req.Model, req.Method, sink)
 		}
 	case "performance":
-		err = wtrain.RunPerformanceFixAndRerun(ctx, req.Model, req.Method, sink)
+		if a.trainController != nil {
+			err = wtrain.ApplySingleLanePerfFix(ctx, req.Model, req.Method, sink)
+		} else {
+			err = wtrain.RunPerformanceFixAndRerun(ctx, req.Model, req.Method, sink)
+		}
 	default:
 		err = wtrain.ApplyFailureFix(ctx, req.Model, req.Method, sink)
 	}
@@ -209,22 +316,30 @@ func (a *Application) runApplyFix(ctx context.Context, runID uint64, req train.R
 		if a.trainReq.Target.Config != nil {
 			delete(a.trainReq.Target.Config, "demo_fail_at_step")
 		}
-		if issueType == "accuracy" {
+		if issueType == "accuracy" || issueType == "performance" {
 			if a.trainReq.Target.Config == nil {
 				a.trainReq.Target.Config = map[string]any{}
 			}
-			a.trainReq.Target.Config["demo_drift_fixed"] = true
+			if issueType == "accuracy" {
+				a.trainReq.Target.Config["demo_drift_fixed"] = true
+			} else {
+				a.trainReq.Target.Config["demo_perf_fixed"] = true
+			}
 		}
 	}
 	if r, ok := a.trainReqs[a.trainCurrentRun]; ok {
 		if r.Target.Config != nil {
 			delete(r.Target.Config, "demo_fail_at_step")
 		}
-		if issueType == "accuracy" {
+		if issueType == "accuracy" || issueType == "performance" {
 			if r.Target.Config == nil {
 				r.Target.Config = map[string]any{}
 			}
-			r.Target.Config["demo_drift_fixed"] = true
+			if issueType == "accuracy" {
+				r.Target.Config["demo_drift_fixed"] = true
+			} else {
+				r.Target.Config["demo_perf_fixed"] = true
+			}
 		}
 		a.trainReqs[a.trainCurrentRun] = r
 	}
@@ -235,6 +350,12 @@ func (a *Application) runApplyFix(ctx context.Context, runID uint64, req train.R
 // Commands are gated by trainPhase to enforce the correct state machine.
 func (a *Application) handleTrainInput(input string) {
 	lower := strings.ToLower(strings.TrimSpace(input))
+
+	// Resolve free-form aliases to canonical commands.
+	if canonical, ok := trainTextAliases[lower]; ok {
+		lower = canonical
+	}
+
 	snapshot := a.getTrainSnapshot()
 	_, pendingBootstrapAction, hasBootstrapAction := a.currentBootstrapAction()
 
@@ -293,12 +414,12 @@ func (a *Application) handleTrainInput(input string) {
 	case hasBootstrapAction && lower == pendingBootstrapAction:
 		a.applyBootstrapAction(pendingBootstrapAction)
 
-	case strings.HasPrefix(lower, "add trick"):
+	case strings.HasPrefix(lower, "add algo-feature"):
 		if snapshot.phase != "ready" && snapshot.phase != "completed" {
-			a.rejectCommand("add trick", "workspace must be stable before trick iteration")
+			a.rejectCommand("add algo-feature", "workspace must be stable before algo-feature iteration")
 			return
 		}
-		a.addTrick(strings.TrimSpace(strings.TrimPrefix(lower, "add trick")))
+		a.addAlgoFeature(strings.TrimSpace(strings.TrimPrefix(lower, "add algo-feature")))
 
 	case lower == "view diff":
 		a.viewDiff()
@@ -406,7 +527,7 @@ func (a *Application) applyBootstrapAction(actionID string) {
 	}()
 }
 
-func (a *Application) addTrick(trick string) {
+func (a *Application) addAlgoFeature(feature string) {
 	ctx, runID, req, _, ok := a.beginTrainTask("fixing")
 	if !ok {
 		return
@@ -415,12 +536,35 @@ func (a *Application) addTrick(trick string) {
 		sink := func(ev wtrain.Event) {
 			a.convertAndEmitTrainEvent(runID, ev)
 		}
-		if err := wtrain.RunTrickIteration(ctx, req.Model, req.Method, trick, sink); err != nil && ctx.Err() == nil {
+		var err error
+		if a.trainController != nil {
+			err = wtrain.RunSingleLaneAlgoFeature(ctx, req.Model, req.Method, feature, sink)
+		} else {
+			err = wtrain.RunTrickIteration(ctx, req.Model, req.Method, feature, sink)
+		}
+		if err != nil && ctx.Err() == nil {
 			a.EventCh <- model.Event{
 				Type:    model.TrainError,
-				Message: fmt.Sprintf("Trick iteration failed: %v", err),
+				Message: fmt.Sprintf("Algo-feature iteration failed: %v", err),
 			}
+			return
 		}
+		// Set flag so rerun uses improved training data.
+		a.trainMu.Lock()
+		if a.trainReq != nil {
+			if a.trainReq.Target.Config == nil {
+				a.trainReq.Target.Config = map[string]any{}
+			}
+			a.trainReq.Target.Config["demo_trick_applied"] = true
+		}
+		if r, ok := a.trainReqs[a.trainCurrentRun]; ok {
+			if r.Target.Config == nil {
+				r.Target.Config = map[string]any{}
+			}
+			r.Target.Config["demo_trick_applied"] = true
+			a.trainReqs[a.trainCurrentRun] = r
+		}
+		a.trainMu.Unlock()
 	}()
 }
 

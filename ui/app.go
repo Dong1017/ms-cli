@@ -241,6 +241,26 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 		case "enter":
+			// If user typed text, send it to backend instead of firing button.
+			if val := a.input.Value(); val != "" {
+				a.state = a.state.ResetStats()
+				a.state = a.state.WithThinking(false)
+				a.state = a.state.WithMessage(model.Message{Kind: model.MsgUser, Content: val})
+				a.input = a.input.Reset()
+				a.viewport = a.viewport.SetSize(a.chatWidth()-4, a.chatHeight())
+				a.updateViewport()
+				// Confirmation words fire the current button action.
+				if isConfirmation(val) {
+					return a.handleTrainAction()
+				}
+				if a.userCh != nil {
+					select {
+					case a.userCh <- val:
+					default:
+					}
+				}
+				return a, nil
+			}
 			return a.handleTrainAction()
 		}
 	}
@@ -830,8 +850,8 @@ func (a App) handleTrainAction() (tea.Model, tea.Cmd) {
 		input = "apply fix"
 	case "analyze_perf":
 		input = "analyze perf"
-	case "add_trick":
-		input = "add trick mhc"
+	case "add_algo_feature":
+		input = "add algo-feature mhc"
 	case "view_diff":
 		input = "view diff"
 	case "inspect_logs":
@@ -1175,6 +1195,16 @@ func dataHost(data *model.TrainEventData) string {
 		return ""
 	}
 	return data.Host
+}
+
+// isConfirmation returns true if the input is a confirmation word
+// that should fire the current focused button action.
+func isConfirmation(input string) bool {
+	switch strings.ToLower(strings.TrimSpace(input)) {
+	case "yes", "ok", "do it", "go ahead", "confirm", "sure", "yep", "y":
+		return true
+	}
+	return false
 }
 
 func valueOr(v, fallback string) string {

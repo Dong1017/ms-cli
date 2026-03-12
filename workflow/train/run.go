@@ -32,5 +32,5 @@ func RunTraining(ctx context.Context, session *Session, backend Backend, sink fu
 	}
 
 	// Eval after successful training
-	return RunSingleLaneEval(ctx, session.Model, session.Method, session.DriftFixed, sink)
+	return RunSingleLaneEval(ctx, session.Model, session.Method, session.DriftFixed, session.PerfFixed, session.TrickApplied, sink)
 }
