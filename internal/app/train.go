@@ -227,7 +227,7 @@ func (a *Application) handleTrainInput(input string) {
 	// Gate all other commands on the current phase.
 	switch {
 	case lower == "start" || lower == "start training":
-		if snapshot.phase != "ready" {
+		if snapshot.phase != "ready" && snapshot.phase != "completed" {
 			a.rejectCommand("start", "setup must complete first")
 			return
 		}

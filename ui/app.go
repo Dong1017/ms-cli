@@ -725,6 +725,7 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		if run := a.trainView.EnsureRun(rid, "", "", "", "", ""); run != nil {
 			run.FixApplied = true
 			run.AgentActions = nil // clear so RefreshActions shows "rerun" not "apply fix"
+			run.StatusMessage = ev.Message
 		}
 		a.trainView.SetStage(model.StageReady)
 		a.trainView.SetRunPhase(rid, model.TrainPhaseReady)
@@ -750,6 +751,12 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 				a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainWorkingStyle.Render(ev.Message)})
 			}
 		} else {
+			rid := trainEventRunID(ev.Train)
+			a.trainView.SetRunPhase(rid, model.TrainPhaseFixing)
+			a.trainView.SetAgentActions(rid, nil)
+			if run := a.trainView.EnsureRun(rid, "", "", "", "", ""); run != nil {
+				run.StatusMessage = ev.Message
+			}
 			a.trainView.SetStage(model.StageFixing)
 			if ev.Message != "" {
 				a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: trainSuccessStyle.Render(ev.Message)})
@@ -1007,9 +1014,6 @@ func (a *App) handleTrainStarted(ev model.Event) {
 	run.StatusMessage = ev.Message
 	run.RunLabel = ev.Train.RunLabel
 	a.trainView.SetActiveRun(run.ID)
-	if ev.Message != "" {
-		a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message})
-	}
 }
 
 func (a *App) handleTrainLogLine(ev model.Event) {
@@ -1054,7 +1058,6 @@ func (a *App) handleTrainDone(ev model.Event) {
 	if run := a.trainView.RunByID(runID); run != nil {
 		run.StatusMessage = ev.Message
 	}
-	a.state = a.state.WithMessage(model.Message{Kind: model.MsgAgent, Content: ev.Message})
 }
 
 func mapTrainStatus(status string) model.TrainCheckStatus {

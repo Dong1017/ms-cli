@@ -336,15 +336,6 @@ func panelAccent(id model.TrainPanelID, tv model.TrainWorkspaceState) lipgloss.C
 	case model.TrainPanelActions:
 		return lipgloss.Color("214")
 	case model.TrainPanelStatus:
-		if run != nil && (run.CurrentIssue != nil || run.Issue != nil) {
-			return lipgloss.Color("196")
-		}
-		if run != nil && (run.Phase == model.TrainPhaseFailed || run.Phase == model.TrainPhaseDriftDetected) {
-			return lipgloss.Color("196")
-		}
-		if run != nil && (run.Phase == model.TrainPhaseRunning || run.Phase == model.TrainPhaseEvaluating) {
-			return lipgloss.Color("39")
-		}
 		return lipgloss.Color("114")
 	case model.TrainPanelMetrics, model.TrainPanelLogs:
 		return lipgloss.Color("240")
@@ -609,16 +600,11 @@ func RenderAgentBox(content string, width, height int, focused bool, totalLines,
 	innerWidth := maxInt(1, width-4)
 	innerHeight := maxInt(1, height-2)
 	bodyHeight := maxInt(1, innerHeight-1)
-	// Reserve 1 column for scrollbar when content overflows.
-	contentWidth := innerWidth
-	if totalLines > bodyHeight {
-		contentWidth = maxInt(1, innerWidth-1)
-	}
+	// Always show the tail of content (streaming behavior, no scrollbar).
 	bodyContent := lipgloss.NewStyle().
-		Width(contentWidth).
+		Width(innerWidth).
 		Height(bodyHeight).
-		Render(trimPanelHeight(content, bodyHeight))
-	bodyContent = attachScrollbar(bodyContent, bodyHeight, totalLines, offset)
+		Render(tailContent(content, bodyHeight))
 	inner := lipgloss.NewStyle().
 		Width(innerWidth).
 		Height(innerHeight).
@@ -677,6 +663,15 @@ func attachScrollbar(content string, height, totalLines, offset int) string {
 	}
 	for i := 0; i < height && i < len(bar); i++ {
 		lines[i] = lines[i] + bar[i]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// tailContent returns the last height lines of content (streaming view).
+func tailContent(content string, height int) string {
+	lines := strings.Split(content, "\n")
+	if len(lines) > height {
+		lines = lines[len(lines)-height:]
 	}
 	return strings.Join(lines, "\n")
 }

@@ -751,7 +751,6 @@ func (s *TrainWorkspaceState) RefreshActions() {
 				Primary: i == 0,
 			})
 		}
-		items = append(items, TrainAction{ID: "inspect_logs", Label: "inspect logs", Enabled: true})
 		s.GlobalActions.Items = items
 		if s.GlobalActions.SelectedIndex >= len(s.GlobalActions.Items) {
 			s.GlobalActions.SelectedIndex = 0
@@ -778,18 +777,15 @@ func (s *TrainWorkspaceState) RefreshActions() {
 	case TrainPhaseRunning, TrainPhaseEvaluating:
 		s.GlobalActions.Items = []TrainAction{
 			{ID: "stop", Label: "stop", Enabled: true, Primary: true},
-			{ID: "inspect_logs", Label: "inspect logs", Enabled: true},
 		}
 	case TrainPhaseFailed:
 		s.GlobalActions.Items = []TrainAction{
 			{ID: "retry", Label: "retry", Enabled: true, Primary: true},
 			{ID: "diagnose", Label: "diagnose", Enabled: true},
-			{ID: "inspect_logs", Label: "inspect logs", Enabled: true},
 		}
 	case TrainPhaseDriftDetected:
 		s.GlobalActions.Items = []TrainAction{
 			{ID: "diagnose", Label: "diagnose", Enabled: true, Primary: true},
-			{ID: "inspect_logs", Label: "inspect logs", Enabled: true},
 		}
 	case TrainPhaseAnalyzing, TrainPhaseFixing:
 		s.GlobalActions.Items = []TrainAction{
@@ -797,18 +793,12 @@ func (s *TrainWorkspaceState) RefreshActions() {
 		}
 	case TrainPhaseCompleted:
 		items := []TrainAction{
-			{ID: "open_report", Label: "open report", Enabled: true, Primary: true},
-			{ID: "rerun", Label: "rerun", Enabled: true},
+			{ID: "rerun", Label: "rerun", Enabled: true, Primary: true},
 			{ID: "analyze_perf", Label: "analyze perf", Enabled: true},
-		}
-		if run := s.ActiveRun(); run != nil && run.FixApplied {
-			items = append(items, TrainAction{ID: "view_diff", Label: "view diff", Enabled: true})
 		}
 		s.GlobalActions.Items = items
 	default:
-		s.GlobalActions.Items = []TrainAction{
-			{ID: "inspect_logs", Label: "inspect logs", Enabled: true},
-		}
+		s.GlobalActions.Items = []TrainAction{}
 	}
 
 	if s.GlobalActions.SelectedIndex >= len(s.GlobalActions.Items) {
