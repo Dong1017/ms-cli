@@ -171,6 +171,41 @@ func RenderTrainActionStrip(tv model.TrainWorkspaceState, width int, focused boo
 	return sep + "\n  " + strings.Join(parts, " ") + "\n" + sep
 }
 
+// RenderSelectionPopup renders a selection popup box string (without placement).
+func RenderSelectionPopup(popup *model.SelectionPopup) string {
+	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
+	normalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
+	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+
+	var lines []string
+	lines = append(lines, titleStyle.Render(popup.Title))
+	lines = append(lines, "")
+	for i, opt := range popup.Options {
+		marker := "  "
+		style := normalStyle
+		if i == popup.Selected {
+			marker = "> "
+			style = selectedStyle
+		}
+		line := marker + style.Render(opt.Label)
+		if opt.Desc != "" {
+			line += " " + descStyle.Render(opt.Desc)
+		}
+		lines = append(lines, line)
+	}
+	lines = append(lines, "")
+	lines = append(lines, hintStyle.Render("↑/↓ select · enter confirm · esc cancel"))
+
+	content := strings.Join(lines, "\n")
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("12")).
+		Padding(0, 2).
+		Render(content)
+}
+
 // RenderTrainWorkspacePanel renders a single boxed panel at the given size.
 // Used for maximized view and stacked row rendering.
 func RenderTrainWorkspacePanel(panel model.TrainPanelID, tv model.TrainWorkspaceState, width, height int) string {

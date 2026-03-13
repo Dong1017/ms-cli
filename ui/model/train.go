@@ -67,6 +67,7 @@ type TrainEventData struct {
 
 	Scope    string
 	Critical bool
+	IsDiff   bool
 
 	RepoPath     string
 	RepoSource   string
@@ -220,6 +221,20 @@ type TrainActionsState struct {
 	InputActive   bool
 }
 
+// SelectionPopup is a popup menu shown when an action needs user input.
+type SelectionPopup struct {
+	Title    string
+	Options  []SelectionOption
+	Selected int
+	ActionID string // which action triggered the popup
+}
+
+type SelectionOption struct {
+	ID    string
+	Label string
+	Desc  string
+}
+
 type TrainMetricsView struct {
 	Step       int
 	TotalSteps int
@@ -359,7 +374,8 @@ type TrainWorkspaceState struct {
 	Panels map[TrainPanelID]*PanelDisplayState
 	Focus  TrainPanelID
 
-	GlobalActions TrainActionsState
+	GlobalActions  TrainActionsState
+	SelectionPopup *SelectionPopup
 }
 
 // TrainViewState remains as a compatibility alias while the rest of the UI

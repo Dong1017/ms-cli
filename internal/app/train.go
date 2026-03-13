@@ -591,6 +591,15 @@ func (a *Application) convertAndEmitTrainEvent(runID uint64, ev wtrain.Event) {
 			},
 		}
 
+	case wtrain.EventDiffLine:
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: ev.Message,
+			Train: &model.TrainEventData{
+				IsDiff: true,
+			},
+		}
+
 	case wtrain.EventTrainSetupStarted:
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,

@@ -48,6 +48,36 @@ func agentMsg(source, msg string, done bool) string {
 	return fmt.Sprintf("%s %s", marker, msg)
 }
 
+var (
+	diffAddStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("114")) // green
+	diffRemoveStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // red
+	diffHunkStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))  // blue
+	diffFileStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true)
+	diffContextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244")) // dim
+	diffSummaryStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Bold(true)
+)
+
+// formatDiffLine colorizes a single diff line for the agent panel.
+func formatDiffLine(line string) string {
+	indent := "               " // align with agent message content
+	switch {
+	case strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++"):
+		return indent + diffFileStyle.Render(line)
+	case strings.HasPrefix(line, "@@"):
+		return indent + diffHunkStyle.Render(line)
+	case strings.HasPrefix(line, "+"):
+		return indent + diffAddStyle.Render(line)
+	case strings.HasPrefix(line, "-"):
+		return indent + diffRemoveStyle.Render(line)
+	case strings.Contains(line, "files changed"):
+		return indent + diffSummaryStyle.Render(line)
+	case line == "":
+		return ""
+	default:
+		return indent + diffContextStyle.Render(line)
+	}
+}
+
 // evSource extracts ActionSource from a train event, or returns fallback.
 func evSource(data *model.TrainEventData, fallback string) string {
 	if data != nil && data.ActionSource != "" {
@@ -250,6 +280,39 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Selection popup navigation
+	if a.trainView.Active && a.trainView.SelectionPopup != nil {
+		switch msg.String() {
+		case "up", "left":
+			p := a.trainView.SelectionPopup
+			p.Selected--
+			if p.Selected < 0 {
+				p.Selected = len(p.Options) - 1
+			}
+			return a, nil
+		case "down", "right":
+			p := a.trainView.SelectionPopup
+			p.Selected = (p.Selected + 1) % len(p.Options)
+			return a, nil
+		case "enter":
+			p := a.trainView.SelectionPopup
+			selected := p.Options[p.Selected]
+			a.trainView.SelectionPopup = nil
+			input := "add algo-feature " + selected.ID
+			if a.userCh != nil {
+				select {
+				case a.userCh <- input:
+				default:
+				}
+			}
+			return a, nil
+		case "esc":
+			a.trainView.SelectionPopup = nil
+			return a, nil
+		}
+		return a, nil
+	}
+
 	// Train mode action navigation
 	if a.trainView.Active && a.trainFocus == model.TrainPanelActions {
 		switch msg.String() {
@@ -404,7 +467,9 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 	case model.AgentReply:
 		a.state = a.state.WithThinking(false)
 		content := ev.Message
-		if ev.Train != nil && ev.Train.ActionSource != "" {
+		if ev.Train != nil && ev.Train.IsDiff {
+			content = formatDiffLine(ev.Message)
+		} else if ev.Train != nil && ev.Train.ActionSource != "" {
 			content = agentMsg(ev.Train.ActionSource, ev.Message, false)
 		}
 		a.state = a.replaceThinking(model.Message{Kind: model.MsgAgent, Content: content})
@@ -880,7 +945,18 @@ func (a App) handleTrainAction() (tea.Model, tea.Cmd) {
 	case "analyze_perf":
 		input = "analyze perf"
 	case "add_algo_feature":
-		input = "add algo-feature mhc"
+		a.trainView.SelectionPopup = &model.SelectionPopup{
+			Title:    "select algo-feature",
+			ActionID: "add_algo_feature",
+			Options: []model.SelectionOption{
+				{ID: "mhc", Label: "MHC", Desc: "multi-head cascaded attention"},
+				{ID: "flash-attn", Label: "Flash Attention", Desc: "memory-efficient fused attention"},
+				{ID: "sparse-attn", Label: "Sparse Attention", Desc: "block-sparse attention pattern"},
+				{ID: "lora-plus", Label: "LoRA+", Desc: "differential learning rate for A/B"},
+				{ID: "galore", Label: "GaLore", Desc: "gradient low-rank projection"},
+			},
+		}
+		return a, nil
 	case "view_diff":
 		input = "view diff"
 	case "inspect_logs":
@@ -1519,7 +1595,7 @@ func (a App) renderTrainLayout(topBar string) string {
 	input := "  " + a.input.View()
 	hintBar := panels.RenderTrainHintBar(w, a.trainFocus)
 
-	return trimViewHeight(lipgloss.JoinVertical(lipgloss.Left,
+	layout := trimViewHeight(lipgloss.JoinVertical(lipgloss.Left,
 		topBar,
 		stageBar,
 		runBar,
@@ -1531,6 +1607,12 @@ func (a App) renderTrainLayout(topBar string) string {
 		input,
 		hintBar,
 	), a.height)
+
+	if a.trainView.SelectionPopup != nil {
+		layout = overlayPopup(layout, panels.RenderSelectionPopup(a.trainView.SelectionPopup), w, a.height)
+	}
+
+	return layout
 }
 
 func trimViewHeight(content string, height int) string {
@@ -1545,4 +1627,38 @@ func trimViewHeight(content string, height int) string {
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// overlayPopup centers a popup box on top of existing rendered content.
+func overlayPopup(bg, popup string, width, height int) string {
+	bgLines := strings.Split(bg, "\n")
+	popupLines := strings.Split(popup, "\n")
+
+	popupH := len(popupLines)
+	startY := (height - popupH) / 2
+	if startY < 0 {
+		startY = 0
+	}
+
+	for len(bgLines) < height {
+		bgLines = append(bgLines, "")
+	}
+
+	for i, pLine := range popupLines {
+		y := startY + i
+		if y >= len(bgLines) {
+			break
+		}
+		pW := lipgloss.Width(pLine)
+		padLeft := (width - pW) / 2
+		if padLeft < 0 {
+			padLeft = 0
+		}
+		bgLines[y] = strings.Repeat(" ", padLeft) + pLine
+	}
+
+	if len(bgLines) > height {
+		bgLines = bgLines[:height]
+	}
+	return strings.Join(bgLines, "\n")
 }

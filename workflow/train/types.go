@@ -41,6 +41,7 @@ const (
 	EventActionApplied      EventKind = "ActionApplied"
 	EventRerunStarted       EventKind = "RerunStarted"
 	EventVerificationPassed EventKind = "VerificationPassed"
+	EventDiffLine           EventKind = "DiffLine"
 )
 
 // Event is a single output from the training workflow.

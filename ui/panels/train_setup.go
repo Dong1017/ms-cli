@@ -266,17 +266,17 @@ func renderMetricsSummary(metrics []model.MetricItem) string {
 
 func renderCheck(c model.ChecklistItem, width int) string {
 	icon := "⟳"
-	iconStyle := checkPendingStyle
+	statusStyle := checkPendingStyle
 	switch c.Status {
 	case model.TrainCheckPass:
 		icon = "✓"
-		iconStyle = checkPassedStyle
+		statusStyle = checkPassedStyle
 	case model.TrainCheckFail:
 		icon = "✗"
-		iconStyle = checkFailedStyle
+		statusStyle = checkFailedStyle
 	case model.TrainCheckRunning:
 		icon = "⟳"
-		iconStyle = checkRunningStyle
+		statusStyle = checkRunningStyle
 	}
 	name := displayCheckName(c.Name)
 	detail := c.Summary
@@ -288,7 +288,7 @@ func renderCheck(c model.ChecklistItem, width int) string {
 			detail = "failed"
 		}
 	}
-	line := "   " + iconStyle.Render(icon) + " " + metricLabelStyle.Render(fmt.Sprintf("%-14s", name)) + checkDetailStyle.Render(truncateRunText(detail, width-20))
+	line := "   " + statusStyle.Render(icon) + " " + statusStyle.Render(fmt.Sprintf("%-14s", name)) + statusStyle.Render(truncateRunText(detail, width-20))
 	return line
 }
 

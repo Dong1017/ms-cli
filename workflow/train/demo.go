@@ -416,6 +416,46 @@ func RunSingleLaneAlgoFeature(ctx context.Context, model, method, feature string
 		return ctx.Err()
 	}
 
+	// Show code changes being applied
+	if !e(Event{Kind: EventMessage, ActionSource: "algo-agent", Message: "patching training config and model forward pass...", DelayMs: 600}) {
+		return ctx.Err()
+	}
+
+	diffLines := []struct {
+		msg     string
+		delayMs int
+	}{
+		{"--- a/configs/qwen3_lora.yaml", 300},
+		{"+++ b/configs/qwen3_lora.yaml", 200},
+		{"@@ -18,6 +18,9 @@", 200},
+		{" loss:", 150},
+		{"-  type: \"cross_entropy\"", 200},
+		{"+  type: \"mhc_loss\"", 200},
+		{"+  mhc_heads: 8", 150},
+		{"+  contrastive_weight: 0.15", 150},
+		{"+  temperature: 0.07", 150},
+		{"", 400},
+		{"--- a/models/qwen3_lora_forward.py", 300},
+		{"+++ b/models/qwen3_lora_forward.py", 200},
+		{"@@ -42,4 +42,12 @@", 200},
+		{" def forward(self, input_ids, attention_mask):", 150},
+		{"     hidden = self.base_model(input_ids, attention_mask)", 150},
+		{"+    # MHC: multi-head contrastive branch", 200},
+		{"+    head_outputs = self.mhc_project(hidden)  # [B, S, num_heads, D]", 200},
+		{"+    contrastive_loss = mhc_contrastive(", 150},
+		{"+        head_outputs, temperature=0.07", 150},
+		{"+    )", 100},
+		{"+    loss = ce_loss + 0.15 * contrastive_loss", 200},
+		{"", 300},
+		{"2 files changed, 9 insertions(+), 1 deletion(-)", 500},
+	}
+
+	for _, d := range diffLines {
+		if !e(Event{Kind: EventDiffLine, Message: d.msg, DelayMs: d.delayMs}) {
+			return ctx.Err()
+		}
+	}
+
 	if !e(Event{
 		Kind:         EventFixApplied,
 		IssueType:    "algo-feature",
