@@ -627,15 +627,23 @@ func RenderAgentBox(content string, width, height int, focused bool, totalLines,
 	if spinnerView != "" {
 		titleText = "agent " + spinnerView
 	}
+	// Show scroll position hint when not at bottom
+	if totalLines > 0 && offset+height-2 < totalLines {
+		remaining := totalLines - offset - (height - 2)
+		if remaining < 0 {
+			remaining = 0
+		}
+		titleText += fmt.Sprintf("  ↓%d more", remaining)
+	}
 	title := panelTitleStyle.Foreground(titleColor).Render(titleText)
 	innerWidth := maxInt(1, width-4)
 	innerHeight := maxInt(1, height-2)
 	bodyHeight := maxInt(1, innerHeight-1)
-	// Always show the tail of content (streaming behavior, no scrollbar).
+	// Content is already scrolled by the viewport — clamp width to fit box.
 	bodyContent := lipgloss.NewStyle().
 		Width(innerWidth).
 		Height(bodyHeight).
-		Render(tailContent(content, bodyHeight))
+		Render(clampPanelWidth(content, innerWidth))
 	inner := lipgloss.NewStyle().
 		Width(innerWidth).
 		Height(innerHeight).

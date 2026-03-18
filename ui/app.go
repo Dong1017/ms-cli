@@ -387,6 +387,32 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Train mode agent panel scrolling
+	if a.trainView.Active && a.trainFocus == model.TrainPanelAgent {
+		switch msg.String() {
+		case "up", "k":
+			a.viewport.Model.LineUp(1)
+			return a, nil
+		case "down", "j":
+			a.viewport.Model.LineDown(1)
+			return a, nil
+		case "pgup":
+			a.viewport.Model.HalfViewUp()
+			return a, nil
+		case "pgdown":
+			a.viewport.Model.HalfViewDown()
+			return a, nil
+		case "home", "g":
+			a.viewport.Model.GotoTop()
+			return a, nil
+		case "end", "G":
+			a.viewport.Model.GotoBottom()
+			return a, nil
+		case "enter", "esc":
+			return a, a.setTrainFocusPanel(model.TrainPanelActions)
+		}
+	}
+
 	// Train mode logs panel scrolling
 	if a.trainView.Active && a.trainFocus == model.TrainPanelLogs {
 		switch msg.String() {
