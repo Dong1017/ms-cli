@@ -19,20 +19,12 @@ const provideAPIKeyFirstMsg = "provide api key first"
 
 // Run parses CLI args, wires dependencies, and starts the application.
 func Run(args []string) error {
-	fs := flag.NewFlagSet("ms-cli", flag.ContinueOnError)
-	url := fs.String("url", "", "OpenAI-compatible base URL")
-	modelFlag := fs.String("model", "", "Model name")
-	apiKey := fs.String("api-key", "", "API key")
-
-	if err := fs.Parse(args); err != nil {
+	cfg, err := parseBootstrapConfig(args)
+	if err != nil {
 		return err
 	}
 
-	app, err := Wire(BootstrapConfig{
-		URL:   *url,
-		Model: *modelFlag,
-		Key:   *apiKey,
-	})
+	app, err := Wire(cfg)
 	if err != nil {
 		return err
 	}
@@ -205,8 +197,6 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 	if len(args) > 0 && args[0] == "resume" {
 		fs := flag.NewFlagSet("ms-cli resume", flag.ContinueOnError)
 		fs.SetOutput(os.Stderr)
-		demo := fs.Bool("demo", false, "Run in demo mode")
-		configPath := fs.String("config", "", "Path to config file")
 		url := fs.String("url", "", "OpenAI-compatible base URL")
 		modelFlag := fs.String("model", "", "Model name")
 		apiKey := fs.String("api-key", "", "API key")
@@ -218,12 +208,10 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 			return BootstrapConfig{}, fmt.Errorf("usage: ms-cli resume [sess_xxx]")
 		}
 		cfg := BootstrapConfig{
-			Demo:       *demo,
-			ConfigPath: *configPath,
-			URL:        *url,
-			Model:      *modelFlag,
-			Key:        *apiKey,
-			Resume:     true,
+			URL:    *url,
+			Model:  *modelFlag,
+			Key:    *apiKey,
+			Resume: true,
 		}
 		if len(rest) == 1 {
 			cfg.ResumeSessionID = rest[0]
@@ -233,8 +221,6 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 
 	fs := flag.NewFlagSet("ms-cli", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	demo := fs.Bool("demo", false, "Run in demo mode")
-	configPath := fs.String("config", "", "Path to config file")
 	url := fs.String("url", "", "OpenAI-compatible base URL")
 	modelFlag := fs.String("model", "", "Model name")
 	apiKey := fs.String("api-key", "", "API key")
@@ -247,11 +233,9 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 	}
 
 	return BootstrapConfig{
-		Demo:       *demo,
-		ConfigPath: *configPath,
-		URL:        *url,
-		Model:      *modelFlag,
-		Key:        *apiKey,
+		URL:   *url,
+		Model: *modelFlag,
+		Key:   *apiKey,
 	}, nil
 }
 
