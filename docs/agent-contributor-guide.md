@@ -63,7 +63,7 @@ ms-cli/
     train/                 train lane controller, setup, run, demo backend
   integrations/
     domain/                domain client and schema
-    llm/                   provider registry and OpenAI-compatible client
+    llm/                   provider registry and OpenAI/Anthropic clients
     skills/                skill repository and invocation integration
   permission/              permission service and types
   runtime/

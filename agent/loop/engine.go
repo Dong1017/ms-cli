@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -138,6 +139,9 @@ type executor struct {
 	startTime  time.Time
 	totalUsage llm.Usage
 	sink       func(Event)
+
+	responsesPreviousID string
+	responsesFollowup   []llm.Message
 }
 
 func (ex *executor) run(ctx context.Context) ([]Event, error) {
@@ -198,12 +202,16 @@ func (ex *executor) callLLM(ctx context.Context) (*llm.CompletionResponse, error
 	defer cancel()
 
 	req := &llm.CompletionRequest{
-		Messages:    ex.engine.ctxManager.GetMessages(),
+		Messages:    ex.requestMessages(),
 		Tools:       ex.engine.tools.ToLLMTools(),
 		Temperature: ex.engine.config.Temperature,
 	}
 
-	resp, err := ex.engine.provider.Complete(llmCtx, req)
+	if ex.usesResponsesChain() && ex.responsesPreviousID != "" {
+		llmCtx = llm.WithPreviousResponseID(llmCtx, ex.responsesPreviousID)
+	}
+
+	resp, err := ex.streamCompletion(llmCtx, req)
 	if err != nil {
 		errMsg := fmt.Sprintf("LLM error: %v", err)
 		if ctx.Err() == context.DeadlineExceeded || llmCtx.Err() == context.DeadlineExceeded {
@@ -215,6 +223,78 @@ func (ex *executor) callLLM(ctx context.Context) (*llm.CompletionResponse, error
 	}
 
 	return resp, nil
+}
+
+func (ex *executor) requestMessages() []llm.Message {
+	if !ex.usesResponsesChain() || ex.responsesPreviousID == "" || len(ex.responsesFollowup) == 0 {
+		return ex.engine.ctxManager.GetMessages()
+	}
+
+	msgs := make([]llm.Message, 0, len(ex.responsesFollowup)+1)
+	if system := ex.engine.ctxManager.GetSystemPrompt(); system != nil {
+		msgs = append(msgs, *system)
+	}
+	msgs = append(msgs, ex.responsesFollowup...)
+	return msgs
+}
+
+func (ex *executor) usesResponsesChain() bool {
+	return ex.engine.provider != nil && ex.engine.provider.Name() == string(llm.ProviderOpenAIResponses)
+}
+
+func (ex *executor) streamCompletion(ctx context.Context, req *llm.CompletionRequest) (*llm.CompletionResponse, error) {
+	iter, err := ex.engine.provider.CompleteStream(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("stream completion: %w", err)
+	}
+	defer iter.Close()
+
+	resp := &llm.CompletionResponse{}
+	for {
+		chunk, nextErr := iter.Next()
+		if chunk != nil {
+			ex.applyStreamChunk(resp, chunk)
+		}
+		if nextErr != nil {
+			if nextErr == io.EOF {
+				break
+			}
+			return nil, nextErr
+		}
+	}
+
+	if resp.FinishReason == "" {
+		if len(resp.ToolCalls) > 0 {
+			resp.FinishReason = llm.FinishToolCalls
+		} else {
+			resp.FinishReason = llm.FinishStop
+		}
+	}
+
+	return resp, nil
+}
+
+func (ex *executor) applyStreamChunk(resp *llm.CompletionResponse, chunk *llm.StreamChunk) {
+	if chunk.ID != "" {
+		resp.ID = chunk.ID
+	}
+	if chunk.Model != "" {
+		resp.Model = chunk.Model
+	}
+	if chunk.Content != "" {
+		resp.Content += chunk.Content
+		ex.addEvent(NewEvent(EventAgentReplyDelta, chunk.Content))
+	}
+	if len(chunk.ToolCalls) > 0 {
+		resp.ToolCalls = make([]llm.ToolCall, len(chunk.ToolCalls))
+		copy(resp.ToolCalls, chunk.ToolCalls)
+	}
+	if chunk.FinishReason != "" {
+		resp.FinishReason = chunk.FinishReason
+	}
+	if chunk.Usage != nil {
+		resp.Usage = *chunk.Usage
+	}
 }
 
 func (ex *executor) handleResponse(ctx context.Context, resp *llm.CompletionResponse) (bool, error) {
@@ -240,6 +320,15 @@ func (ex *executor) handleResponse(ctx context.Context, resp *llm.CompletionResp
 		}
 	}
 
+	if ex.usesResponsesChain() && strings.TrimSpace(resp.ID) != "" {
+		ex.responsesPreviousID = strings.TrimSpace(resp.ID)
+		ex.responsesFollowup = nil
+	}
+
+	if resp.Content != "" {
+		ex.addEvent(NewEvent(EventAgentReply, resp.Content))
+	}
+
 	if len(resp.ToolCalls) > 0 {
 		for _, tc := range resp.ToolCalls {
 			if err := ex.executeToolCall(ctx, tc); err != nil {
@@ -249,9 +338,6 @@ func (ex *executor) handleResponse(ctx context.Context, resp *llm.CompletionResp
 		return true, nil
 	}
 
-	if resp.Content != "" {
-		ex.addEvent(NewEvent(EventAgentReply, resp.Content))
-	}
 	return false, nil
 }
 
@@ -363,6 +449,9 @@ func (ex *executor) addToolResult(callID, content string) error {
 	msg := llm.NewToolMessage(callID, content)
 	if err := ex.engine.ctxManager.AddMessage(msg); err != nil {
 		return err
+	}
+	if ex.usesResponsesChain() && ex.responsesPreviousID != "" {
+		ex.responsesFollowup = append(ex.responsesFollowup, msg)
 	}
 	if ex.engine.recorder != nil && ex.engine.recorder.RecordToolResult != nil {
 		var toolCall llm.ToolCall

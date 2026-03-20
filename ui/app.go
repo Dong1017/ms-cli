@@ -511,10 +511,15 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 		} else if ev.Train != nil && ev.Train.ActionSource != "" {
 			content = agentMsg(ev.Train.ActionSource, ev.Message, false)
 		}
-		a.state = a.replaceThinking(model.Message{Kind: model.MsgAgent, Content: content})
+		a.state = a.finalizeAgentMessage(content)
+
+	case model.AgentReplyDelta:
+		a.state = a.state.WithThinking(false)
+		a.state = a.appendToStreamingAgent(ev.Message)
 
 	case model.ToolCallStart:
 		a.state = a.state.WithThinking(false)
+		a.state = a.commitStreamingAgent()
 		a.state = a.replaceThinking(a.pendingToolMessage(ev))
 
 	case model.CmdStarted:
@@ -1503,6 +1508,73 @@ func (a App) replaceThinking(m model.Message) model.State {
 	next := a.state
 	next.Messages = msgs
 	return next
+}
+
+func (a App) appendToStreamingAgent(delta string) model.State {
+	if delta == "" {
+		return a.state
+	}
+
+	msgs := make([]model.Message, 0, len(a.state.Messages))
+	for _, msg := range a.state.Messages {
+		if msg.Kind != model.MsgThinking {
+			msgs = append(msgs, msg)
+		}
+	}
+
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Kind == model.MsgAgent && msgs[i].Streaming {
+			msgs[i].Content += delta
+			next := a.state
+			next.Messages = msgs
+			return next
+		}
+	}
+
+	msgs = append(msgs, model.Message{
+		Kind:      model.MsgAgent,
+		Content:   delta,
+		Streaming: true,
+	})
+	next := a.state
+	next.Messages = msgs
+	return next
+}
+
+func (a App) finalizeAgentMessage(content string) model.State {
+	msgs := make([]model.Message, 0, len(a.state.Messages))
+	for _, msg := range a.state.Messages {
+		if msg.Kind != model.MsgThinking {
+			msgs = append(msgs, msg)
+		}
+	}
+
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Kind == model.MsgAgent && msgs[i].Streaming {
+			msgs[i].Content = content
+			msgs[i].Streaming = false
+			next := a.state
+			next.Messages = msgs
+			return next
+		}
+	}
+
+	return a.replaceThinking(model.Message{Kind: model.MsgAgent, Content: content})
+}
+
+func (a App) commitStreamingAgent() model.State {
+	msgs := make([]model.Message, len(a.state.Messages))
+	copy(msgs, a.state.Messages)
+
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Kind == model.MsgAgent && msgs[i].Streaming {
+			msgs[i].Streaming = false
+			next := a.state
+			next.Messages = msgs
+			return next
+		}
+	}
+	return a.state
 }
 
 func (a App) hasThinkingMessage() bool {

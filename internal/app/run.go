@@ -197,7 +197,7 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 	if len(args) > 0 && args[0] == "resume" {
 		fs := flag.NewFlagSet("ms-cli resume", flag.ContinueOnError)
 		fs.SetOutput(os.Stderr)
-		url := fs.String("url", "", "OpenAI-compatible base URL")
+		url := fs.String("url", "", "LLM API base URL")
 		modelFlag := fs.String("model", "", "Model name")
 		apiKey := fs.String("api-key", "", "API key")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -221,7 +221,7 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 
 	fs := flag.NewFlagSet("ms-cli", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	url := fs.String("url", "", "OpenAI-compatible base URL")
+	url := fs.String("url", "", "LLM API base URL")
 	modelFlag := fs.String("model", "", "Model name")
 	apiKey := fs.String("api-key", "", "API key")
 
@@ -242,20 +242,21 @@ func parseBootstrapConfig(args []string) (BootstrapConfig, error) {
 // convertLoopEvent maps loop.Event -> UI model.Event.
 func convertLoopEvent(ev loop.Event) *model.Event {
 	typeMap := map[string]model.EventType{
-		"ToolCallStart": model.ToolCallStart,
-		"AgentReply":    model.AgentReply,
-		"AgentThinking": model.AgentThinking,
-		"ToolRead":      model.ToolRead,
-		"ToolGrep":      model.ToolGrep,
-		"ToolGlob":      model.ToolGlob,
-		"ToolEdit":      model.ToolEdit,
-		"ToolWrite":     model.ToolWrite,
-		"ToolSkill":     model.ToolSkill,
-		"ToolError":     model.ToolError,
-		"CmdStarted":    model.CmdStarted,
-		"AnalysisReady": model.AnalysisReady,
-		"TokenUpdate":   model.TokenUpdate,
-		"TaskFailed":    model.ToolError,
+		"ToolCallStart":   model.ToolCallStart,
+		"AgentReply":      model.AgentReply,
+		"AgentReplyDelta": model.AgentReplyDelta,
+		"AgentThinking":   model.AgentThinking,
+		"ToolRead":        model.ToolRead,
+		"ToolGrep":        model.ToolGrep,
+		"ToolGlob":        model.ToolGlob,
+		"ToolEdit":        model.ToolEdit,
+		"ToolWrite":       model.ToolWrite,
+		"ToolSkill":       model.ToolSkill,
+		"ToolError":       model.ToolError,
+		"CmdStarted":      model.CmdStarted,
+		"AnalysisReady":   model.AnalysisReady,
+		"TokenUpdate":     model.TokenUpdate,
+		"TaskFailed":      model.ToolError,
 	}
 
 	uiType, ok := typeMap[ev.Type]

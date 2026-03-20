@@ -8,7 +8,6 @@ import (
 
 	"github.com/vigo999/ms-cli/integrations/llm"
 	"github.com/vigo999/ms-cli/integrations/skills"
-	providerpkg "github.com/vigo999/ms-cli/integrations/llm/provider"
 	"github.com/vigo999/ms-cli/internal/project"
 	"github.com/vigo999/ms-cli/permission"
 	"github.com/vigo999/ms-cli/ui/model"
@@ -130,12 +129,12 @@ func (a *Application) cmdModel(args []string) {
 	modelArg := args[0]
 	if strings.Contains(modelArg, ":") {
 		parts := strings.SplitN(modelArg, ":", 2)
-		providerName := providerpkg.NormalizeProvider(parts[0])
+		providerName := llm.NormalizeProvider(parts[0])
 		modelName := strings.TrimSpace(parts[1])
-		if !providerpkg.IsSupportedProvider(providerName) {
+		if !llm.IsSupportedProvider(providerName) {
 			a.EventCh <- model.Event{
 				Type:    model.AgentReply,
-				Message: fmt.Sprintf("Unsupported provider prefix: %s (supported: openai, openai-compatible, anthropic)", providerName),
+				Message: fmt.Sprintf("Unsupported provider prefix: %s (supported: openai-completion, openai-responses, anthropic)", providerName),
 			}
 			return
 		}
@@ -149,7 +148,7 @@ func (a *Application) cmdModel(args []string) {
 func (a *Application) showCurrentModel() {
 	providerName := a.Config.Model.Provider
 	if providerName == "" {
-		providerName = "openai-compatible"
+		providerName = "openai-responses"
 	}
 	modelName := a.Config.Model.Model
 	url := a.Config.Model.URL
@@ -175,8 +174,8 @@ To switch model:
 
 Examples:
   /model gpt-4o
-  /model openai:gpt-4o-mini
-  /model openai-compatible:gpt-4o-mini
+  /model openai-completion:gpt-4o-mini
+  /model openai-responses:gpt-4o-mini
   /model anthropic:claude-3-5-sonnet`, providerName, url, modelName, apiKeyStatus)
 
 	a.EventCh <- model.Event{Type: model.AgentReply, Message: msg}
@@ -459,7 +458,8 @@ func (a *Application) cmdHelp() {
 Model Commands:
   /model                  Show current configuration
   /model gpt-4o           Switch to gpt-4o
-  /model openai:gpt-4o    Set provider+model
+  /model openai-completion:gpt-4o
+  /model openai-responses:gpt-4o-mini
   /model anthropic:claude-3-5-sonnet
 
 Permission Commands:
@@ -483,7 +483,7 @@ Keybindings:
   ctrl+c     Cancel/Quit (press twice to exit)
 
 Environment Variables:
-  MSCLI_PROVIDER          Provider (openai/openai-compatible/anthropic)
+  MSCLI_PROVIDER          Provider (openai-completion/openai-responses/anthropic)
   MSCLI_BASE_URL          Base URL
   MSCLI_MODEL             Default model
   MSCLI_API_KEY           API key

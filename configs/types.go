@@ -20,7 +20,7 @@ type Config struct {
 
 func (c *Config) normalize() {
 	if strings.TrimSpace(c.Model.Provider) == "" {
-		c.Model.Provider = "openai-compatible"
+		c.Model.Provider = "openai-responses"
 	}
 }
 
@@ -107,7 +107,7 @@ func DefaultConfig() *Config {
 	cfg := &Config{
 		Model: ModelConfig{
 			URL:         "https://api.openai.com/v1",
-			Provider:    "openai-compatible",
+			Provider:    "openai-responses",
 			Model:       "gpt-4o-mini",
 			Temperature: 0.7,
 			MaxTokens:   4096,
@@ -178,7 +178,7 @@ func (c *Config) Validate() error {
 
 	if provider := strings.ToLower(strings.TrimSpace(c.Model.Provider)); provider != "" {
 		switch provider {
-		case "openai", "openai-compatible", "anthropic":
+		case "openai-completion", "openai-responses", "anthropic":
 		default:
 			return fmt.Errorf("unsupported provider %q", strings.TrimSpace(c.Model.Provider))
 		}

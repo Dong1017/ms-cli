@@ -16,7 +16,6 @@ import (
 	"github.com/vigo999/ms-cli/configs"
 	"github.com/vigo999/ms-cli/integrations/llm"
 	"github.com/vigo999/ms-cli/integrations/skills"
-	providerpkg "github.com/vigo999/ms-cli/integrations/llm/provider"
 	itrain "github.com/vigo999/ms-cli/internal/train"
 	"github.com/vigo999/ms-cli/permission"
 	rshell "github.com/vigo999/ms-cli/runtime/shell"
@@ -100,7 +99,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 
 	var provider llm.Provider
 	llmReady := true
-	resolveOpts := providerpkg.ResolveOptions{
+	resolveOpts := llm.ResolveOptions{
 		PreferConfigAPIKey:  strings.TrimSpace(cfg.Key) != "",
 		PreferConfigBaseURL: strings.TrimSpace(cfg.URL) != "",
 	}
@@ -216,8 +215,8 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 
 // SetProvider updates model/key and reinitializes the engine.
 func (a *Application) SetProvider(providerName, modelName, apiKey string) error {
-	normalizedProvider := providerpkg.NormalizeProvider(providerName)
-	if normalizedProvider != "" && !providerpkg.IsSupportedProvider(normalizedProvider) {
+	normalizedProvider := llm.NormalizeProvider(providerName)
+	if normalizedProvider != "" && !llm.IsSupportedProvider(normalizedProvider) {
 		return fmt.Errorf("unsupported provider: %s", providerName)
 	}
 
@@ -232,7 +231,7 @@ func (a *Application) SetProvider(providerName, modelName, apiKey string) error 
 		a.Config.Model.Key = apiKey
 	}
 
-	resolveOpts := providerpkg.ResolveOptions{
+	resolveOpts := llm.ResolveOptions{
 		PreferConfigAPIKey: strings.TrimSpace(apiKey) != "",
 	}
 	provider, err := initProvider(a.Config.Model, resolveOpts)
@@ -264,16 +263,16 @@ func (a *Application) SetProvider(providerName, modelName, apiKey string) error 
 	return nil
 }
 
-func initProvider(cfg configs.ModelConfig, opts providerpkg.ResolveOptions) (llm.Provider, error) {
-	resolved, err := providerpkg.ResolveConfigWithOptions(cfg, opts)
+func initProvider(cfg configs.ModelConfig, opts llm.ResolveOptions) (llm.Provider, error) {
+	resolved, err := llm.ResolveConfigWithOptions(cfg, opts)
 	if err != nil {
-		if errors.Is(err, providerpkg.ErrMissingAPIKey) {
+		if errors.Is(err, llm.ErrMissingAPIKey) {
 			return nil, errAPIKeyNotFound
 		}
 		return nil, fmt.Errorf("resolve provider config: %w", err)
 	}
 
-	client, err := providerpkg.DefaultManager().Build(resolved)
+	client, err := llm.DefaultManager().Build(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("build provider: %w", err)
 	}
