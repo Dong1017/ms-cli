@@ -67,10 +67,10 @@ user input
      or free text -> runTask(...)
 
 runTask:
-  -> compose effective system prompt:
+  -> compose effective conversation context:
        EngineConfig.SystemPrompt
        + skill summaries (from integrations/skills)
-       + active skill SKILL.md (if command-scoped)
+       + any skill content preloaded by /skill as a load_skill tool result
   -> agent/loop.Engine.RunWithContext(task)
   -> tools.Registry
   -> tools/fs or tools/shell
@@ -83,15 +83,24 @@ directly. The LLM plans inline within the agent loop.
 
 ### Skill activation
 
-Skills are command-scoped. No sticky state.
+At startup, `internal/app.Wire(...)` refreshes the shared skills repo into
+`~/.ms-cli/mindspore-skills` (git clone/pull when git is available, archive
+download otherwise) and adds `~/.ms-cli/mindspore-skills/skills` as the
+highest-priority skill search path.
+
+Current slash-skill activation is session-visible, not purely task-scoped.
+`/skill <name>` and `/<name>` preload the skill by injecting a synthetic
+`load_skill` tool call/result into conversation history. If a request is
+provided, that request runs immediately; if omitted, the app submits a default
+"start this skill now" task so the LLM begins following the skill steps
+without waiting for another prompt.
 
 ```text
-/diagnose my training crashed
+/skill failure-agent
   -> app loads failure-agent SKILL.md from integrations/skills
-  -> sets task.SkillContext (one task only)
-  -> engine composes effective system prompt: base + active skill
-  -> engine runs
-  -> next task has no skill context (base prompt only)
+  -> app injects synthetic load_skill tool call/result into context
+  -> app submits a default start request if the user did not provide one
+  -> engine runs with base prompt + existing conversation context
 ```
 
 Free text uses the base system prompt which includes skill summaries
@@ -130,8 +139,9 @@ features migrate to agent-skills.
   Owns session state, trajectory persistence, and resume reconstruction.
 
 - **`integrations/skills/`**
-  Lists available skills from the ms-skills repo (summaries only).
-  Loads one skill fully on demand (SKILL.md + skill.yaml metadata).
+  Refreshes the shared skills repo into `~/.ms-cli/mindspore-skills`,
+  lists available skills across configured search paths, and loads one skill
+  fully on demand (`SKILL.md` + metadata/frontmatter).
 
 - **`internal/factory/`**
   Local card store. Search, get, list cards. Status from pack manifest.

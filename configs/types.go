@@ -155,8 +155,8 @@ func DefaultConfig() *Config {
 			TTLHours:  168,             // 7 days
 		},
 		Skills: SkillsConfig{
-			Repo:      "https://github.com/vigo/mindspore-skills.git",
-			Revision:  "main",
+			Repo:      "https://github.com/vigo999/mindspore-skills",
+			Revision:  "refactor-arch-1.0",
 			CacheDir:  ".cache/skills",
 			Workflows: []string{},
 		},

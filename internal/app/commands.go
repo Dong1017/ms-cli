@@ -295,7 +295,7 @@ func (a *Application) cmdSkill(args []string) {
 			a.EventCh <- model.Event{Type: model.AgentReply, Message: "No skills available."}
 			return
 		}
-		msg := "Available skills:\n\n" + skills.FormatSummaries(summaries) + "\nUsage: /skill <name> [request...]"
+		msg := "Available skills:\n\n" + skills.FormatSummaries(summaries) + "\nUsage: /skill <name> [request...] (omit request to start the skill immediately)"
 		a.EventCh <- model.Event{Type: model.AgentReply, Message: msg}
 		return
 	}
@@ -346,20 +346,24 @@ func (a *Application) cmdSkill(args []string) {
 		Summary:  fmt.Sprintf("loaded skill: %s", skillName),
 	}
 
-	userRequest := ""
-	if len(args) > 1 {
-		userRequest = strings.Join(args[1:], " ")
-	}
-	if strings.TrimSpace(userRequest) == "" {
-		return
+	userRequest := strings.TrimSpace(strings.Join(args[1:], " "))
+	if userRequest == "" {
+		userRequest = defaultSkillRequest(skillName)
 	}
 	go a.runTask(userRequest)
+}
+
+func defaultSkillRequest(skillName string) string {
+	return fmt.Sprintf(
+		`The %q skill is already loaded. Start following that skill now using the current workspace and conversation context. Begin with the first concrete step immediately, keep gathering evidence with tools, and only stop to ask the user if the skill cannot proceed without missing information.`,
+		skillName,
+	)
 }
 
 func (a *Application) cmdHelp() {
 	helpText := `Available commands:
 
-  /skill [name] [request] Load and run a skill (e.g. /skill pdf extract text from report.pdf)
+  /skill [name] [request] Load and run a skill; omit request to start immediately
   /train <model> <method> Start train workflow (e.g. /train qwen3 lora)
   /train <action>         Control active train HUD (start, stop, analyze, apply fix, retry, view diff, exit)
   /project [status]        Show project status snapshot (server + git status)

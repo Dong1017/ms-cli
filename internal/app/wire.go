@@ -127,16 +127,26 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 
 	toolRegistry := initTools(config, workDir)
 
-	// Skills: discover from binary dir, home dir, and project dir.
+	// Skills: refresh the shared repo under ~/.ms-cli, then discover from
+	// legacy local dirs plus the synced repo (highest priority).
 	homeDir, _ := os.UserHomeDir()
 	execSkillsDir := ""
 	if ep, err := os.Executable(); err == nil {
 		execSkillsDir = filepath.Join(filepath.Dir(ep), ".ms-cli", "skills")
 	}
+	syncedSkillsDir := ""
+	if strings.TrimSpace(homeDir) != "" {
+		repoSync := skills.NewDefaultRepoSync(homeDir)
+		syncedSkillsDir = repoSync.SkillsDir()
+		if err := repoSync.Sync(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: sync shared skills repo: %v\n", err)
+		}
+	}
 	skillLoader := skills.NewLoader(
 		execSkillsDir,
 		filepath.Join(homeDir, ".ms-cli", "skills"),
 		filepath.Join(workDir, ".ms-cli", "skills"),
+		syncedSkillsDir,
 	)
 	toolRegistry.MustRegister(skillstool.NewLoadSkillTool(skillLoader))
 
@@ -209,19 +219,19 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 	engine.SetPermissionService(permService)
 
 	app := &Application{
-		Engine:       engine,
-		EventCh:      make(chan model.Event, 64),
-		WorkDir:      workDir,
-		RepoURL:      "github.com/vigo999/ms-cli",
-		Config:       config,
-		provider:     provider,
-		toolRegistry: toolRegistry,
-		ctxManager:   ctxManager,
-		permService:  permService,
+		Engine:        engine,
+		EventCh:       make(chan model.Event, 64),
+		WorkDir:       workDir,
+		RepoURL:       "github.com/vigo999/ms-cli",
+		Config:        config,
+		provider:      provider,
+		toolRegistry:  toolRegistry,
+		ctxManager:    ctxManager,
+		permService:   permService,
 		session:       runtimeSession,
 		replayBacklog: replayBacklog,
-		llmReady:     llmReady,
-		skillLoader:  skillLoader,
+		llmReady:      llmReady,
+		skillLoader:   skillLoader,
 	}
 
 	// Auto-login from saved credentials.
