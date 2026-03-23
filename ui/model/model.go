@@ -70,8 +70,9 @@ const (
 	ClearScreen     EventType = "ClearScreen"
 	ModelUpdate     EventType = "ModelUpdate"
 	MouseModeToggle EventType = "MouseModeToggle"
-	IssueUserUpdate EventType = "IssueUserUpdate"
-	Done            EventType = "Done"
+	IssueUserUpdate  EventType = "IssueUserUpdate"
+	ReleaseNoteUpdate EventType = "ReleaseNoteUpdate"
+	Done             EventType = "Done"
 )
 
 // Event is sent from the agent loop to the TUI.
@@ -111,6 +112,7 @@ type State struct {
 	IsThinking       bool      // whether AI is currently thinking
 	MouseEnabled     bool      // whether mouse mode is enabled (for scrolling)
 	IssueUser        string    // logged-in bug server user
+	ReleaseNote      string    // release notes for current version
 }
 
 // NewState returns an initial empty state.
@@ -151,6 +153,7 @@ func (s State) WithTask(t TaskInfo) State {
 		IsThinking:       s.IsThinking,
 		MouseEnabled:     s.MouseEnabled,
 		IssueUser:        s.IssueUser,
+		ReleaseNote:      s.ReleaseNote,
 	}
 }
 
@@ -169,6 +172,7 @@ func (s State) WithMessage(m Message) State {
 		IsThinking:       s.IsThinking,
 		MouseEnabled:     s.MouseEnabled,
 		IssueUser:        s.IssueUser,
+		ReleaseNote:      s.ReleaseNote,
 	}
 }
 
@@ -187,6 +191,7 @@ func (s State) WithModel(m ModelInfo) State {
 		IsThinking:       s.IsThinking,
 		MouseEnabled:     s.MouseEnabled,
 		IssueUser:        s.IssueUser,
+		ReleaseNote:      s.ReleaseNote,
 	}
 }
 
@@ -205,6 +210,7 @@ func (s State) WithStats(stats TaskStats) State {
 		IsThinking:       s.IsThinking,
 		MouseEnabled:     s.MouseEnabled,
 		IssueUser:        s.IssueUser,
+		ReleaseNote:      s.ReleaseNote,
 	}
 }
 
@@ -223,6 +229,7 @@ func (s State) WithThinking(thinking bool) State {
 		IsThinking:       thinking,
 		MouseEnabled:     s.MouseEnabled,
 		IssueUser:        s.IssueUser,
+		ReleaseNote:      s.ReleaseNote,
 	}
 }
 
@@ -241,6 +248,7 @@ func (s State) ResetStats() State {
 		IsThinking:       s.IsThinking,
 		MouseEnabled:     s.MouseEnabled,
 		IssueUser:        s.IssueUser,
+		ReleaseNote:      s.ReleaseNote,
 	}
 }
 
@@ -259,6 +267,7 @@ func (s State) WithIssueUser(user string) State {
 		IsThinking:       s.IsThinking,
 		MouseEnabled:     s.MouseEnabled,
 		IssueUser:        user,
+		ReleaseNote:      s.ReleaseNote,
 	}
 }
 
@@ -276,5 +285,7 @@ func (s State) WithMouseEnabled(enabled bool) State {
 		Stats:            s.Stats,
 		IsThinking:       s.IsThinking,
 		MouseEnabled:     enabled,
+		IssueUser:        s.IssueUser,
+		ReleaseNote:      s.ReleaseNote,
 	}
 }
