@@ -1,5 +1,7 @@
 package model
 
+import "github.com/vigo999/ms-cli/internal/issues"
+
 // TaskInfo represents a task in the task pool.
 type TaskInfo struct {
 	ID   string
@@ -47,28 +49,28 @@ type Message struct {
 type EventType string
 
 const (
-	TaskUpdated     EventType = "TaskUpdated"
-	ToolCallStart   EventType = "ToolCallStart"
-	CmdStarted      EventType = "CmdStarted"
-	CmdOutput       EventType = "CmdOutput"
-	CmdFinished     EventType = "CmdFinished"
-	AnalysisReady   EventType = "AnalysisReady"
-	AgentReply      EventType = "AgentReply"
-	AgentThinking   EventType = "AgentThinking"
-	TokenUpdate     EventType = "TokenUpdate"
-	ToolRead        EventType = "ToolRead"
-	ToolGrep        EventType = "ToolGrep"
-	ToolGlob        EventType = "ToolGlob"
-	ToolEdit        EventType = "ToolEdit"
-	ToolWrite       EventType = "ToolWrite"
-	ToolSkill       EventType = "ToolSkill"
-	ToolError       EventType = "ToolError"
-	ClearScreen     EventType = "ClearScreen"
-	ModelUpdate     EventType = "ModelUpdate"
-	MouseModeToggle EventType = "MouseModeToggle"
-	IssueUserUpdate  EventType = "IssueUserUpdate"
+	TaskUpdated       EventType = "TaskUpdated"
+	ToolCallStart     EventType = "ToolCallStart"
+	CmdStarted        EventType = "CmdStarted"
+	CmdOutput         EventType = "CmdOutput"
+	CmdFinished       EventType = "CmdFinished"
+	AnalysisReady     EventType = "AnalysisReady"
+	AgentReply        EventType = "AgentReply"
+	AgentThinking     EventType = "AgentThinking"
+	TokenUpdate       EventType = "TokenUpdate"
+	ToolRead          EventType = "ToolRead"
+	ToolGrep          EventType = "ToolGrep"
+	ToolGlob          EventType = "ToolGlob"
+	ToolEdit          EventType = "ToolEdit"
+	ToolWrite         EventType = "ToolWrite"
+	ToolSkill         EventType = "ToolSkill"
+	ToolError         EventType = "ToolError"
+	ClearScreen       EventType = "ClearScreen"
+	ModelUpdate       EventType = "ModelUpdate"
+	MouseModeToggle   EventType = "MouseModeToggle"
+	IssueUserUpdate   EventType = "IssueUserUpdate"
 	ReleaseNoteUpdate EventType = "ReleaseNoteUpdate"
-	Done             EventType = "Done"
+	Done              EventType = "Done"
 )
 
 // Event is sent from the agent loop to the TUI.
@@ -83,6 +85,8 @@ type Event struct {
 	CtxMax     int
 	TokensUsed int
 	Train      *TrainEventData // non-nil for train events only
+	BugView    *BugEventData   // non-nil for bug view events only
+	Bug        *issues.Bug     // reserved for lightweight bug payloads
 }
 
 // TaskStats tracks execution statistics for the current task.

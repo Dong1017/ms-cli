@@ -32,7 +32,7 @@ type TextInput struct {
 // NewTextInput creates a focused text input with "> " prompt.
 func NewTextInput() TextInput {
 	ti := textinput.New()
-	ti.Prompt = "> "
+	ti.Prompt = "❯ "
 	ti.Placeholder = ""
 	ti.Focus()
 	ti.CharLimit = 2000
@@ -52,7 +52,7 @@ func (t TextInput) Value() string {
 func (t TextInput) Reset() TextInput {
 	t.Model.Reset()
 	t.showSuggestions = false
-	t.slashMode = false
+	// Keep slashMode — it gets cleared when the command result arrives.
 	t.suggestions = nil
 	t.selectedIdx = 0
 	t.historyIndex = -1
@@ -225,6 +225,9 @@ func (t TextInput) View() string {
 	inputView := t.Model.View()
 
 	if !t.showSuggestions || len(t.suggestions) == 0 {
+		if t.slashMode {
+			return inputView + strings.Repeat("\n", 8)
+		}
 		return inputView
 	}
 
@@ -256,20 +259,21 @@ func (t TextInput) View() string {
 			sb.WriteString(sugDescStyle.Render(cmd.Description))
 		}
 
-		if i < len(t.suggestions)-1 && i < 7 {
-			sb.WriteString("\n")
-		}
+		sb.WriteString("\n")
+	}
+	// Pad remaining rows to fill fixed 8-row area.
+	rendered := min(len(t.suggestions), 8)
+	for i := rendered; i < 8; i++ {
+		sb.WriteString("\n")
 	}
 
 	return sb.String()
 }
 
-// Height returns the total height including suggestions.
-// Once slash mode is entered, reserve a fixed height until
-// the user submits or leaves slash mode, preventing jumps.
+// Height returns the total height including suggestions area.
 func (t TextInput) Height() int {
 	if t.slashMode {
-		return 1 + 8 // Input line + fixed suggestion area
+		return 1 + 8
 	}
 	return 1
 }
@@ -277,6 +281,14 @@ func (t TextInput) Height() int {
 // IsSlashMode returns true if showing slash suggestions.
 func (t TextInput) IsSlashMode() bool {
 	return t.showSuggestions
+}
+
+// ClearSlashMode exits the slash suggestion reserved area.
+func (t TextInput) ClearSlashMode() TextInput {
+	t.slashMode = false
+	t.showSuggestions = false
+	t.suggestions = nil
+	return t
 }
 
 // HasSuggestions returns true if there are visible suggestion candidates.

@@ -108,7 +108,7 @@ func (s *Store) ListBugs(status string) ([]issues.Bug, error) {
 		query += ` WHERE status = ?`
 		args = append(args, status)
 	}
-	query += ` ORDER BY created_at DESC`
+	query += ` ORDER BY updated_at DESC`
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
