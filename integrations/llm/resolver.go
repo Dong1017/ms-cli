@@ -3,7 +3,6 @@ package llm
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -73,14 +72,6 @@ func resolveAPIKey(kind ProviderKind, cfgKey string, opts ResolveOptions) (strin
 	if raw := strings.TrimSpace(cfgKey); raw != "" {
 		return raw, nil
 	}
-	if kind == ProviderAnthropic {
-		if raw := strings.TrimSpace(os.Getenv("ANTHROPIC_AUTH_TOKEN")); raw != "" {
-			return raw, nil
-		}
-		if raw := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")); raw != "" {
-			return raw, nil
-		}
-	}
 
 	return "", fmt.Errorf("%w for provider %s", ErrMissingAPIKey, kind)
 }
@@ -95,9 +86,6 @@ func resolveBaseURL(kind ProviderKind, cfgURL string, opts ResolveOptions) strin
 	switch kind {
 	case ProviderAnthropic:
 		if raw := strings.TrimSpace(cfgURL); raw != "" && normalizeURLForComparison(raw) != normalizeURLForComparison(defaultOpenAIBaseURL) {
-			return raw
-		}
-		if raw := strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL")); raw != "" {
 			return raw
 		}
 		return defaultAnthropicBaseURL
