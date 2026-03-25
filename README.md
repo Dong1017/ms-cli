@@ -53,6 +53,28 @@ mscli
 | `/model <provider:model>` | Switch LLM model |
 | `/clear` | Clear chat |
 
+### `@file` Input Expansion
+
+`ms-cli` supports inline file expansion for plain chat input and these text-tail commands:
+
+- `/report`
+- `/diagnose`
+- `/fix`
+- `/skill <name> ...`
+- direct skill aliases such as `/pdf ...`
+
+Use a standalone workspace-relative token like `@docs/bug.md` to inline a text file into the prompt.
+Use `@@name` to keep a literal `@name` token.
+
+v1 limits:
+
+- only standalone whitespace-delimited `@relative/path` tokens are expanded
+- paths with spaces are not supported
+- files must stay inside the current workspace
+- files must be UTF-8 text without NUL bytes
+- files larger than `64 KiB` are rejected
+- any invalid `@file` reference fails the whole input
+
 ### Server Setup
 
 The bug and project server runs separately:
