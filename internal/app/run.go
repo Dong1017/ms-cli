@@ -96,7 +96,13 @@ func (a *Application) processInput(input string) {
 		return
 	}
 
-	go a.runTask(trimmed)
+	expanded, err := a.expandInputText(trimmed)
+	if err != nil {
+		a.emitInputExpansionError(err)
+		return
+	}
+
+	go a.runTask(expanded)
 }
 
 func (a *Application) runTask(description string) {

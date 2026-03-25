@@ -13,14 +13,15 @@ import (
 )
 
 func (a *Application) handleCommand(input string) {
-	parts := strings.Fields(input)
-	if len(parts) == 0 {
+	cmd, ok := splitRawCommand(input)
+	if !ok {
 		return
 	}
+	args := strings.Fields(cmd.Remainder)
 
-	switch parts[0] {
+	switch cmd.Name {
 	case "/model":
-		a.cmdModel(parts[1:])
+		a.cmdModel(args)
 	case "/exit":
 		a.cmdExit()
 	case "/compact":
@@ -30,59 +31,124 @@ func (a *Application) handleCommand(input string) {
 	case "/test":
 		a.cmdTest()
 	case "/permission":
-		a.cmdPermission(parts[1:])
+		a.cmdPermission(args)
 	case "/yolo":
 		a.cmdYolo()
 	case "/train":
-		a.cmdTrain(parts[1:])
+		a.cmdTrain(args)
 	case "/project":
-		a.cmdProjectInput(strings.TrimSpace(strings.TrimPrefix(input, "/project")))
+		a.cmdProjectInput(cmd.Remainder)
 	case "/login":
-		a.cmdLogin(parts[1:])
+		a.cmdLogin(args)
 	case "/report":
-		a.cmdIssueReportInput(strings.TrimSpace(strings.TrimPrefix(input, "/report")))
+		expanded, err := a.expandReportInput(cmd.Remainder)
+		if err != nil {
+			a.emitInputExpansionError(err)
+			return
+		}
+		a.cmdIssueReportInput(expanded)
 	case "/issues":
-		a.cmdIssues(parts[1:])
+		a.cmdIssues(args)
 	case "/__issue_detail":
-		a.cmdIssueDetail(parts[1:])
+		a.cmdIssueDetail(args)
 	case "/__issue_note":
-		a.cmdIssueNoteInput(strings.TrimSpace(strings.TrimPrefix(input, "/__issue_note")))
+		a.cmdIssueNoteInput(cmd.Remainder)
 	case "/__issue_claim":
-		a.cmdIssueClaim(parts[1:])
+		a.cmdIssueClaim(args)
 	case "/status":
-		a.cmdIssueStatus(parts[1:])
+		a.cmdIssueStatus(args)
 	case "/diagnose":
-		a.cmdDiagnose(strings.TrimSpace(strings.TrimPrefix(input, "/diagnose")))
+		expanded, err := a.expandIssueCommandInput(cmd.Remainder)
+		if err != nil {
+			a.emitInputExpansionError(err)
+			return
+		}
+		a.cmdDiagnose(expanded)
 	case "/fix":
-		a.cmdFix(strings.TrimSpace(strings.TrimPrefix(input, "/fix")))
+		expanded, err := a.expandIssueCommandInput(cmd.Remainder)
+		if err != nil {
+			a.emitInputExpansionError(err)
+			return
+		}
+		a.cmdFix(expanded)
 	case "/bugs":
-		a.cmdBugs(parts[1:])
+		a.cmdBugs(args)
 	case "/__bug_detail":
-		a.cmdBugDetail(parts[1:])
+		a.cmdBugDetail(args)
 	case "/claim":
-		a.cmdClaim(parts[1:])
+		a.cmdClaim(args)
 	case "/close":
-		a.cmdClose(parts[1:])
+		a.cmdClose(args)
 	case "/dock":
 		a.cmdDock()
 	case "/skill":
-		a.cmdSkill(parts[1:])
+		if err := a.handleRawSkillCommand(cmd.Remainder); err != nil {
+			a.emitInputExpansionError(err)
+		}
 	case "/help":
 		a.cmdHelp()
 	default:
-		// Check if the command matches a skill name directly (e.g. /pdf → /skill pdf).
-		skillName := strings.TrimPrefix(parts[0], "/")
-		if a.skillLoader != nil {
-			if _, err := a.skillLoader.Load(skillName); err == nil {
-				a.cmdSkill(append([]string{skillName}, parts[1:]...))
-				return
+		if handled, err := a.handleSkillAliasCommand(cmd.Name, cmd.Remainder); handled {
+			if err != nil {
+				a.emitInputExpansionError(err)
 			}
+			return
 		}
 		a.EventCh <- model.Event{
 			Type:    model.AgentReply,
-			Message: fmt.Sprintf("Unknown command: %s. Type /help for available commands.", parts[0]),
+			Message: fmt.Sprintf("Unknown command: %s. Type /help for available commands.", cmd.Name),
 		}
 	}
+}
+
+func (a *Application) handleRawSkillCommand(rawInput string) error {
+	if strings.TrimSpace(rawInput) == "" {
+		a.cmdSkill(nil)
+		return nil
+	}
+
+	skillName, request := splitFirstToken(rawInput)
+	if skillName == "" {
+		a.cmdSkill(nil)
+		return nil
+	}
+
+	if request != "" {
+		expanded, err := a.expandInputText(request)
+		if err != nil {
+			return err
+		}
+		request = expanded
+	}
+
+	a.runSkillCommand(skillName, request)
+	return nil
+}
+
+func (a *Application) handleSkillAliasCommand(commandName, rawRemainder string) (bool, error) {
+	if a.skillLoader == nil {
+		return false, nil
+	}
+
+	skillName := strings.TrimPrefix(strings.TrimSpace(commandName), "/")
+	if skillName == "" {
+		return false, nil
+	}
+	if _, err := a.skillLoader.Load(skillName); err != nil {
+		return false, nil
+	}
+
+	request := strings.TrimSpace(rawRemainder)
+	if request != "" {
+		expanded, err := a.expandInputText(request)
+		if err != nil {
+			return true, err
+		}
+		request = expanded
+	}
+
+	a.runSkillCommand(skillName, request)
+	return true, nil
 }
 
 func (a *Application) cmdModel(args []string) {
@@ -312,17 +378,26 @@ func (a *Application) cmdSkill(args []string) {
 		return
 	}
 	if len(args) == 0 {
-		summaries := a.skillLoader.List()
-		if len(summaries) == 0 {
-			a.EventCh <- model.Event{Type: model.AgentReply, Message: "No skills available."}
-			return
-		}
-		msg := "Available skills:\n\n" + skills.FormatSummaries(summaries) + "\nUsage: /skill <name> [request...] (omit request to start the skill immediately)"
-		a.EventCh <- model.Event{Type: model.AgentReply, Message: msg}
+		a.showAvailableSkills()
 		return
 	}
 
 	skillName := args[0]
+	userRequest := strings.TrimSpace(strings.Join(args[1:], " "))
+	a.runSkillCommand(skillName, userRequest)
+}
+
+func (a *Application) showAvailableSkills() {
+	summaries := a.skillLoader.List()
+	if len(summaries) == 0 {
+		a.EventCh <- model.Event{Type: model.AgentReply, Message: "No skills available."}
+		return
+	}
+	msg := "Available skills:\n\n" + skills.FormatSummaries(summaries) + "\nUsage: /skill <name> [request...] (omit request to start the skill immediately)"
+	a.EventCh <- model.Event{Type: model.AgentReply, Message: msg}
+}
+
+func (a *Application) runSkillCommand(skillName, userRequest string) {
 	content, err := a.skillLoader.Load(skillName)
 	if err != nil {
 		a.EventCh <- model.Event{
@@ -368,7 +443,6 @@ func (a *Application) cmdSkill(args []string) {
 		Summary:  fmt.Sprintf("loaded skill: %s", skillName),
 	}
 
-	userRequest := strings.TrimSpace(strings.Join(args[1:], " "))
 	if userRequest == "" {
 		userRequest = defaultSkillRequest(skillName)
 	}
@@ -436,6 +510,12 @@ Keybindings:
   home/end   Jump to top/bottom
   /          Start a slash command
   ctrl+c     Cancel/Quit (press twice to exit)
+
+@file Input Expansion:
+  Plain chat and /report, /diagnose, /fix, /skill, /<skill> alias support standalone @relative/path
+  Use @@name to keep a literal @name token
+  Files must stay inside the workspace, be UTF-8 text, and be <= 64 KiB
+  Invalid @file references fail the whole input
 
 Environment Variables:
   MSCLI_PROVIDER          Provider (openai-completion/openai-responses/anthropic)
