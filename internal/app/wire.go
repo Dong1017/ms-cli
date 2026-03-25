@@ -33,6 +33,10 @@ import (
 
 var errAPIKeyNotFound = errors.New("api key not found")
 
+var buildProvider = func(resolved llm.ResolvedConfig) (llm.Provider, error) {
+	return llm.DefaultManager().Build(resolved)
+}
+
 var Version = "MindSpore AI Infra Agent CLI. " + version.Version
 
 // Application is the top-level composition container.
@@ -323,7 +327,7 @@ func initProvider(cfg configs.ModelConfig, opts llm.ResolveOptions) (llm.Provide
 		return nil, fmt.Errorf("resolve provider config: %w", err)
 	}
 
-	client, err := llm.DefaultManager().Build(resolved)
+	client, err := buildProvider(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("build provider: %w", err)
 	}

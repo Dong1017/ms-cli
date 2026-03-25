@@ -30,7 +30,7 @@ func TestCmdModel_UnprefixedKeepsProvider(t *testing.T) {
 
 func TestCmdModel_PrefixedUpdatesProviderAndModel(t *testing.T) {
 	app := newModelCommandTestApp()
-	app.Config.Model.Provider = "openai-compatible"
+	app.Config.Model.Provider = "openai-completion"
 	app.Config.Model.Model = "gpt-4o-mini"
 
 	app.cmdModel([]string{"anthropic:claude-3-5-sonnet"})
@@ -63,7 +63,7 @@ func TestCmdModel_ModelUpdateCarriesContextWindow(t *testing.T) {
 
 func TestCmdModel_InvalidPrefixNoMutation(t *testing.T) {
 	app := newModelCommandTestApp()
-	app.Config.Model.Provider = "openai-compatible"
+	app.Config.Model.Provider = "openai-completion"
 	app.Config.Model.Model = "gpt-4o-mini"
 
 	app.cmdModel([]string{"invalid:gpt-4o"})
@@ -73,7 +73,7 @@ func TestCmdModel_InvalidPrefixNoMutation(t *testing.T) {
 		t.Fatalf("unexpected message: %q", ev.Message)
 	}
 
-	if got, want := app.Config.Model.Provider, "openai-compatible"; got != want {
+	if got, want := app.Config.Model.Provider, "openai-completion"; got != want {
 		t.Fatalf("provider = %q, want %q", got, want)
 	}
 	if got, want := app.Config.Model.Model, "gpt-4o-mini"; got != want {
