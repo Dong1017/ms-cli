@@ -20,7 +20,6 @@ import (
 	issuepkg "github.com/vigo999/ms-cli/internal/issues"
 	projectpkg "github.com/vigo999/ms-cli/internal/project"
 	itrain "github.com/vigo999/ms-cli/internal/train"
-	"github.com/vigo999/ms-cli/internal/update"
 	"github.com/vigo999/ms-cli/internal/version"
 	"github.com/vigo999/ms-cli/permission"
 	rshell "github.com/vigo999/ms-cli/runtime/shell"
@@ -54,9 +53,6 @@ type Application struct {
 	permService   permission.PermissionService
 	session       *session.Session
 	replayBacklog []model.Event
-
-	// Self-update
-	pendingUpdate *update.CheckResult
 
 	// Skills
 	skillLoader   *skills.Loader
