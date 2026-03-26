@@ -98,18 +98,8 @@ func (a App) handleIssueIndexKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (a App) handleIssueDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if a.input.HasSuggestions() {
-		switch msg.String() {
-		case "tab", "esc", "enter":
-			var cmd tea.Cmd
-			a.input, cmd = a.input.Update(msg)
-			a.resizeActiveLayout()
-			return a, cmd
-		case "up", "down":
-			var cmd tea.Cmd
-			a.input, cmd = a.input.Update(msg)
-			return a, cmd
-		}
+	if next, cmd, handled := a.handleComposerSuggestionKey(msg); handled {
+		return next, cmd
 	}
 
 	if strings.TrimSpace(a.input.Value()) == "" {

@@ -419,7 +419,6 @@ func newSlashSuggestionInput(count int) TextInput {
 	input := NewTextInput()
 	registry := slash.NewRegistry()
 	input.slashRegistry = registry
-	input.showSuggestions = true
 	input.suggestionKind = suggestionKindSlash
 	input.suggestionItems = make([]suggestionItem, 0, count)
 

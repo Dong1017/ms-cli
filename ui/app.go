@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -37,7 +36,6 @@ var (
 	trainSuccessStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))
 	trainWorkingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
 	queueBannerStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).PaddingLeft(2)
-	atFileCandidateRE = regexp.MustCompile(`^[A-Za-z0-9._/\\-]+$`)
 )
 
 // agentMsg formats an agent message with a status marker and fixed-width source prefix.
@@ -277,6 +275,26 @@ func (a App) ensureWaitForEvent(cmd tea.Cmd) tea.Cmd {
 	return tea.Batch(cmd, a.waitForEvent)
 }
 
+func (a App) handleComposerSuggestionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	if !a.input.HasSuggestions() {
+		return a, nil, false
+	}
+
+	switch msg.String() {
+	case "tab", "esc", "enter":
+		var cmd tea.Cmd
+		a.input, cmd = a.input.Update(msg)
+		a.resizeActiveLayout()
+		return a, cmd, true
+	case "up", "down":
+		var cmd tea.Cmd
+		a.input, cmd = a.input.Update(msg)
+		return a, cmd, true
+	default:
+		return a, nil, false
+	}
+}
+
 // chatWidth returns the width available for the chat panel.
 // In the stacked train layout the viewport is full-width.
 func (a App) chatWidth() int {
@@ -329,18 +347,8 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.handleBugKey(msg)
 	}
 
-	if a.input.HasSuggestions() {
-		switch msg.String() {
-		case "tab", "esc", "enter":
-			var cmd tea.Cmd
-			a.input, cmd = a.input.Update(msg)
-			a.resizeActiveLayout()
-			return a, cmd
-		case "up", "down":
-			var cmd tea.Cmd
-			a.input, cmd = a.input.Update(msg)
-			return a, cmd
-		}
+	if next, cmd, handled := a.handleComposerSuggestionKey(msg); handled {
+		return next, cmd
 	}
 
 	// Selection popup navigation
@@ -2175,23 +2183,11 @@ func trimViewHeight(content string, height int) string {
 
 func shouldDeferUserEcho(input string) bool {
 	for _, token := range strings.Fields(input) {
-		if isAtFileCandidateToken(token) {
+		if components.IsFileSuggestionToken(token) {
 			return true
 		}
 	}
 	return false
-}
-
-func isAtFileCandidateToken(token string) bool {
-	switch {
-	case token == "":
-		return false
-	case strings.HasPrefix(token, "@@"):
-		return false
-	case !strings.HasPrefix(token, "@") || len(token) == 1:
-		return false
-	}
-	return atFileCandidateRE.MatchString(token[1:])
 }
 
 // overlayPopup centers a popup box on top of existing rendered content.

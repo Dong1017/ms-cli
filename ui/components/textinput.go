@@ -53,7 +53,6 @@ type TextInput struct {
 	Model            textarea.Model
 	slashRegistry    *slash.Registry
 	fileSuggestion   *fileSuggestionProvider
-	showSuggestions  bool
 	suggestionKind   suggestionKind
 	suggestionItems  []suggestionItem
 	selectedIdx      int
@@ -119,12 +118,9 @@ func (t TextInput) Value() string {
 // Reset clears the input.
 func (t TextInput) Reset() TextInput {
 	t.Model.Reset()
-	t.syncHeight()
-	t = t.clearSuggestions()
+	t = t.clearTransientState().clearSuggestions()
 	t.historyIndex = -1
 	t.historyDraft = ""
-	t.maskedPasteRaw = ""
-	t.maskedPasteLabel = ""
 	return t
 }
 
@@ -169,7 +165,7 @@ func (t TextInput) Update(msg tea.Msg) (TextInput, tea.Cmd) {
 			t.Model.SetHeight(t.editorHeight() + 1)
 		}
 
-		if t.showSuggestions && len(t.suggestionItems) > 0 {
+		if t.HasSuggestions() {
 			switch msg.String() {
 			case "up":
 				if t.selectedIdx > 0 {
@@ -203,8 +199,7 @@ func (t TextInput) Update(msg tea.Msg) (TextInput, tea.Cmd) {
 	t.Model = m
 	t.syncHeight()
 	if t.maskedPasteLabel != "" && !strings.Contains(t.Model.Value(), t.maskedPasteLabel) {
-		t.maskedPasteRaw = ""
-		t.maskedPasteLabel = ""
+		t = t.clearMaskedPaste()
 	}
 
 	// Update suggestions based on current input
@@ -242,10 +237,7 @@ func (t TextInput) PrevHistory() TextInput {
 		t.historyIndex--
 	}
 	t.Model.SetValue(t.history[t.historyIndex])
-	t.syncHeight()
-	t.maskedPasteRaw = ""
-	t.maskedPasteLabel = ""
-	t = t.clearSuggestions()
+	t = t.clearTransientState().clearSuggestions()
 	return t
 }
 
@@ -257,19 +249,13 @@ func (t TextInput) NextHistory() TextInput {
 	if t.historyIndex < len(t.history)-1 {
 		t.historyIndex++
 		t.Model.SetValue(t.history[t.historyIndex])
-		t.syncHeight()
-		t.maskedPasteRaw = ""
-		t.maskedPasteLabel = ""
-		t = t.clearSuggestions()
+		t = t.clearTransientState().clearSuggestions()
 		return t
 	}
 	t.historyIndex = -1
 	t.Model.SetValue(t.historyDraft)
-	t.syncHeight()
-	t.maskedPasteRaw = ""
-	t.maskedPasteLabel = ""
 	t.historyDraft = ""
-	t = t.clearSuggestions()
+	t = t.clearTransientState().clearSuggestions()
 	return t
 }
 
@@ -306,7 +292,7 @@ func (t TextInput) View() string {
 	sep := t.separator()
 	inputView := composerStyle.Render(t.Model.View())
 
-	if !t.showSuggestions || len(t.suggestionItems) == 0 {
+	if !t.HasSuggestions() {
 		if t.suggestionKind != suggestionKindNone {
 			return sep + "\n" + inputView + strings.Repeat("\n", maxVisibleSuggestions) + "\n" + sep
 		}
@@ -367,7 +353,7 @@ func (t TextInput) Height() int {
 
 // IsSlashMode returns true if showing slash suggestions.
 func (t TextInput) IsSlashMode() bool {
-	return t.showSuggestions && t.suggestionKind == suggestionKindSlash
+	return t.HasSuggestions() && t.suggestionKind == suggestionKindSlash
 }
 
 // ClearSlashMode exits the slash suggestion reserved area.
@@ -380,7 +366,7 @@ func (t TextInput) ClearSlashMode() TextInput {
 
 // HasSuggestions returns true if there are visible suggestion candidates.
 func (t TextInput) HasSuggestions() bool {
-	return t.showSuggestions && len(t.suggestionItems) > 0
+	return t.suggestionKind != suggestionKindNone && len(t.suggestionItems) > 0
 }
 
 // HasPasteSummary returns true when the composer is showing a collapsed paste preview.
@@ -444,7 +430,6 @@ func (t *TextInput) syncSuggestionWindow() {
 }
 
 func (t TextInput) clearSuggestions() TextInput {
-	t.showSuggestions = false
 	t.suggestionKind = suggestionKindNone
 	t.suggestionItems = nil
 	t.selectedIdx = 0
@@ -458,7 +443,6 @@ func (t *TextInput) setSuggestions(kind suggestionKind, span tokenRange, items [
 		*t = t.clearSuggestions()
 		return
 	}
-	t.showSuggestions = true
 	t.suggestionKind = kind
 	t.suggestionItems = items
 	t.activeToken = span
@@ -477,11 +461,7 @@ func (t TextInput) applySuggestion(item suggestionItem) TextInput {
 
 	t.Model.SetValue(replaceRunesInRange(t.Model.Value(), t.activeToken, replacement))
 	t.Model.SetCursor(t.activeToken.start + len([]rune(replacement)))
-	t.syncHeight()
-	t.maskedPasteRaw = ""
-	t.maskedPasteLabel = ""
-	t = t.clearSuggestions()
-	return t
+	return t.clearTransientState().clearSuggestions()
 }
 
 func (t TextInput) slashSuggestionItems(token string, span tokenRange) ([]suggestionItem, bool) {
@@ -507,7 +487,7 @@ func (t TextInput) slashSuggestionItems(token string, span tokenRange) ([]sugges
 }
 
 func (t TextInput) fileSuggestionItems(token string, span tokenRange) ([]suggestionItem, bool) {
-	if !isFileSuggestionToken(token) {
+	if !IsFileSuggestionToken(token) {
 		return nil, false
 	}
 	return t.fileSuggestion.suggestions(token[1:]), true
@@ -557,7 +537,7 @@ func replaceRunesInRange(value string, span tokenRange, replacement string) stri
 	return prefix + replacement + suffix
 }
 
-func isFileSuggestionToken(token string) bool {
+func IsFileSuggestionToken(token string) bool {
 	switch {
 	case token == "":
 		return false
@@ -572,6 +552,17 @@ func isFileSuggestionToken(token string) bool {
 		}
 	}
 	return true
+}
+
+func (t TextInput) clearMaskedPaste() TextInput {
+	t.maskedPasteRaw = ""
+	t.maskedPasteLabel = ""
+	return t
+}
+
+func (t TextInput) clearTransientState() TextInput {
+	t.syncHeight()
+	return t.clearMaskedPaste()
 }
 
 func isAllowedFileSuggestionRune(r rune) bool {
