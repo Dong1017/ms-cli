@@ -164,13 +164,19 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 
 	registerSkillCommands(skillLoader.List())
 
+	ctxManager := agentctx.NewManager(agentctx.ManagerConfig{
+		MaxTokens:           config.Context.Window,
+		ReserveTokens:       config.Context.ReserveTokens,
+		CompactionThreshold: config.Context.CompactionThreshold,
+		MaxHistoryRounds:    config.Context.MaxHistoryRounds,
+	})
+
 	// Build system prompt: base + skill summaries.
 	systemPrompt := buildSystemPrompt(skillLoader.List())
 
 	var (
-		runtimeSession   *session.Session
-		replayBacklog    []model.Event
-		restoredMessages []llm.Message
+		runtimeSession *session.Session
+		replayBacklog  []model.Event
 	)
 	if cfg.Resume {
 		if strings.TrimSpace(cfg.ResumeSessionID) != "" {
@@ -184,32 +190,15 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 				return nil, fmt.Errorf("load latest session: %w", err)
 			}
 		}
-		systemPrompt, restoredMessages = runtimeSession.RestoreContext()
+		systemPrompt, restoredMessages := runtimeSession.RestoreContext()
+		ctxManager.SetSystemPrompt(systemPrompt)
+		ctxManager.SetNonSystemMessages(restoredMessages)
 		replayBacklog = runtimeSession.ReplayEvents()
 	} else {
 		runtimeSession, err = session.Create(workDir, systemPrompt)
 		if err != nil {
 			return nil, fmt.Errorf("create session: %w", err)
 		}
-	}
-
-	ctxManager := agentctx.NewManager(agentctx.ManagerConfig{
-		MaxTokens:           config.Context.Window,
-		ReserveTokens:       config.Context.ReserveTokens,
-		CompactionThreshold: config.Context.CompactionThreshold,
-		MaxHistoryRounds:    config.Context.MaxHistoryRounds,
-		BeforeCompact: func(systemPrompt string, messages []llm.Message) error {
-			if runtimeSession == nil {
-				return nil
-			}
-			return runtimeSession.BackupSnapshotBeforeCompact(systemPrompt, messages)
-		},
-	})
-
-	if cfg.Resume {
-		ctxManager.SetSystemPrompt(systemPrompt)
-		ctxManager.SetNonSystemMessages(restoredMessages)
-	} else {
 		ctxManager.SetSystemPrompt(systemPrompt)
 	}
 
@@ -222,6 +211,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 	}
 	engine := loop.NewEngine(engineCfg, provider, toolRegistry)
 	engine.SetContextManager(ctxManager)
+	engine.SetTrajectoryRecorder(newTrajectoryRecorder(runtimeSession))
 
 	permService := permission.NewDefaultPermissionService(config.Permissions)
 	engine.SetPermissionService(permService)
@@ -242,7 +232,6 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		skillLoader:   skillLoader,
 		skillsHomeDir: strings.TrimSpace(homeDir),
 	}
-	engine.SetTrajectoryRecorder(newTrajectoryRecorder(app))
 
 	// Auto-login from saved credentials.
 	if cred, err := loadCredentials(); err == nil {
@@ -306,7 +295,7 @@ func (a *Application) SetProvider(providerName, modelName, apiKey string) error 
 	}
 	newEngine.SetContextManager(a.ctxManager)
 	newEngine.SetPermissionService(a.permService)
-	newEngine.SetTrajectoryRecorder(newTrajectoryRecorder(a))
+	newEngine.SetTrajectoryRecorder(newTrajectoryRecorder(a.session))
 
 	a.Engine = newEngine
 	a.provider = provider
@@ -330,55 +319,37 @@ func initProvider(cfg configs.ModelConfig, opts llm.ResolveOptions) (llm.Provide
 	return client, nil
 }
 
-func newTrajectoryRecorder(a *Application) *loop.TrajectoryRecorder {
+func newTrajectoryRecorder(s *session.Session) *loop.TrajectoryRecorder {
 	return &loop.TrajectoryRecorder{
 		RecordUserInput: func(content string) error {
-			if a == nil || a.session == nil {
+			if s == nil {
 				return nil
 			}
-			return a.session.AppendUserInput(content)
-		},
-		RecordAssistantDelta: func(content string) error {
-			if a == nil || a.session == nil {
-				return nil
-			}
-			return a.session.AppendAssistantDelta(content)
+			return s.AppendUserInput(content)
 		},
 		RecordAssistant: func(content string) error {
-			if a == nil || a.session == nil {
+			if s == nil {
 				return nil
 			}
-			return a.session.AppendAssistant(content)
+			return s.AppendAssistant(content)
 		},
 		RecordToolCall: func(tc llm.ToolCall) error {
-			if a == nil || a.session == nil {
+			if s == nil {
 				return nil
 			}
-			return a.session.AppendToolCall(tc)
+			return s.AppendToolCall(tc)
 		},
 		RecordToolResult: func(tc llm.ToolCall, content string) error {
-			if a == nil || a.session == nil {
+			if s == nil {
 				return nil
 			}
-			return a.session.AppendToolResult(tc.ID, tc.Function.Name, content)
+			return s.AppendToolResult(tc.ID, tc.Function.Name, content)
 		},
 		RecordSkillActivate: func(skillName string) error {
-			if a == nil || a.session == nil {
+			if s == nil {
 				return nil
 			}
-			return a.session.AppendSkillActivation(skillName)
-		},
-		PersistSnapshot: func() error {
-			if a == nil {
-				return nil
-			}
-			return a.persistSessionSnapshot()
-		},
-		PersistAssistantDraftSnapshot: func(content string, toolCalls []llm.ToolCall) error {
-			if a == nil {
-				return nil
-			}
-			return a.persistSessionSnapshotWithAssistantDraft(content, toolCalls)
+			return s.AppendSkillActivation(skillName)
 		},
 	}
 }

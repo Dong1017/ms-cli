@@ -115,18 +115,11 @@ func (a *Application) runTask(description string) {
 			a.emitToolError("context", "Failed to record local turn: %v", err)
 			return
 		}
-		if err := a.persistSessionSnapshot(); err != nil {
-			a.emitToolError("session", "Failed to persist session snapshot: %v", err)
-			return
-		}
-		emit(model.Event{
-			Type:    model.UserInput,
-			Message: description,
-		})
 		emit(model.Event{
 			Type:    model.AgentReply,
 			Message: provideAPIKeyFirstMsg,
 		})
+		persistSnapshot()
 		return
 	}
 
@@ -237,34 +230,7 @@ func (a *Application) persistSessionSnapshot() error {
 	if a == nil || a.session == nil || a.ctxManager == nil {
 		return nil
 	}
-	return a.persistSessionSnapshotWithMessages(a.ctxManager.GetNonSystemMessages())
-}
-
-func (a *Application) persistSessionSnapshotWithMessages(messages []llm.Message) error {
-	if a == nil || a.session == nil {
-		return nil
-	}
-	return a.session.SaveSnapshot(a.currentSystemPrompt(), messages)
-}
-
-func (a *Application) persistSessionSnapshotWithAssistantDraft(content string, toolCalls []llm.ToolCall) error {
-	if a == nil || a.session == nil || a.ctxManager == nil {
-		return nil
-	}
-
-	messages := a.ctxManager.GetNonSystemMessages()
-	if content != "" || len(toolCalls) > 0 {
-		draft := llm.Message{
-			Role:    "assistant",
-			Content: content,
-		}
-		if len(toolCalls) > 0 {
-			draft.ToolCalls = make([]llm.ToolCall, len(toolCalls))
-			copy(draft.ToolCalls, toolCalls)
-		}
-		messages = append(messages, draft)
-	}
-	return a.persistSessionSnapshotWithMessages(messages)
+	return a.session.SaveSnapshot(a.currentSystemPrompt(), a.ctxManager.GetNonSystemMessages())
 }
 
 func (a *Application) recordUnavailableTurn(userInput, assistantReply string) error {
@@ -358,7 +324,6 @@ var loopEventTypeMap = map[string]model.EventType{
 	"AgentReply":      model.AgentReply,
 	"AgentReplyDelta": model.AgentReplyDelta,
 	"AgentThinking":   model.AgentThinking,
-	"UserInput":       model.UserInput,
 	"ToolRead":        model.ToolRead,
 	"ToolGrep":        model.ToolGrep,
 	"ToolGlob":        model.ToolGlob,
@@ -376,7 +341,7 @@ var loopEventTypeMap = map[string]model.EventType{
 func convertLoopEvent(ev loop.Event) *model.Event {
 	uiType, ok := loopEventTypeMap[ev.Type]
 	if !ok {
-		if ev.Type == loop.EventTaskCompleted || ev.Type == loop.EventTaskStarted {
+		if ev.Type == "TaskCompleted" {
 			return nil
 		}
 		if ev.Message != "" {
