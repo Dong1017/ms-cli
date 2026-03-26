@@ -68,9 +68,10 @@ type Application struct {
 	projectService *projectpkg.Service
 
 	// Foreground chat task state
-	taskRunID   uint64
-	taskCancels map[uint64]context.CancelFunc
-	taskMu      sync.Mutex
+	taskRunID    uint64
+	taskCancels  map[uint64]context.CancelFunc
+	taskMu       sync.Mutex
+	mouseEnabled bool
 
 	// Train mode state
 	trainMode       bool
@@ -249,6 +250,7 @@ func Wire(cfg BootstrapConfig) (*Application, error) {
 		replayBacklog: replayBacklog,
 		llmReady:      llmReady,
 		skillLoader:   skillLoader,
+		mouseEnabled:  true,
 	}
 
 	// Auto-login from saved credentials.

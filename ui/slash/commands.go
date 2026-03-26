@@ -165,6 +165,12 @@ func (r *Registry) registerDefaults() {
 	})
 
 	r.Register(Command{
+		Name:        "/mouse",
+		Description: "Toggle mouse wheel mode",
+		Usage:       "/mouse [on|off|toggle|status]",
+	})
+
+	r.Register(Command{
 		Name:        "/skill",
 		Description: "Load a skill and start it",
 		Usage:       "/skill <name> [request...]",

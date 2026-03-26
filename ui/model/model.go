@@ -118,7 +118,7 @@ type State struct {
 	RepoURL          string
 	Stats            TaskStats // current task statistics
 	IsThinking       bool      // whether AI is currently thinking
-	MouseEnabled     bool      // whether mouse mode is enabled (for scrolling)
+	MouseEnabled     bool      // whether mouse mode is enabled for chat scrolling
 	IssueUser        string    // logged-in bug server user
 	ReleaseNote      string    // release notes for current version
 }
@@ -142,7 +142,7 @@ func NewState(version, workDir, repoURL, modelName string, ctxMax int) State {
 		RepoURL:      repoURL,
 		Stats:        TaskStats{},
 		IsThinking:   false,
-		MouseEnabled: true, // default to enabled for scroll wheel
+		MouseEnabled: true,
 	}
 }
 
@@ -260,25 +260,6 @@ func (s State) ResetStats() State {
 	}
 }
 
-// WithIssueUser returns a new State with updated issue user.
-func (s State) WithIssueUser(user string) State {
-	return State{
-		Version:          s.Version,
-		Tasks:            s.Tasks,
-		ActiveTask:       s.ActiveTask,
-		Model:            s.Model,
-		Messages:         s.Messages,
-		ShowTaskSelector: s.ShowTaskSelector,
-		WorkDir:          s.WorkDir,
-		RepoURL:          s.RepoURL,
-		Stats:            s.Stats,
-		IsThinking:       s.IsThinking,
-		MouseEnabled:     s.MouseEnabled,
-		IssueUser:        user,
-		ReleaseNote:      s.ReleaseNote,
-	}
-}
-
 // WithMouseEnabled returns a new State with updated mouse mode.
 func (s State) WithMouseEnabled(enabled bool) State {
 	return State{
@@ -294,6 +275,25 @@ func (s State) WithMouseEnabled(enabled bool) State {
 		IsThinking:       s.IsThinking,
 		MouseEnabled:     enabled,
 		IssueUser:        s.IssueUser,
+		ReleaseNote:      s.ReleaseNote,
+	}
+}
+
+// WithIssueUser returns a new State with updated issue user.
+func (s State) WithIssueUser(user string) State {
+	return State{
+		Version:          s.Version,
+		Tasks:            s.Tasks,
+		ActiveTask:       s.ActiveTask,
+		Model:            s.Model,
+		Messages:         s.Messages,
+		ShowTaskSelector: s.ShowTaskSelector,
+		WorkDir:          s.WorkDir,
+		RepoURL:          s.RepoURL,
+		Stats:            s.Stats,
+		IsThinking:       s.IsThinking,
+		MouseEnabled:     s.MouseEnabled,
+		IssueUser:        user,
 		ReleaseNote:      s.ReleaseNote,
 	}
 }

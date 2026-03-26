@@ -110,7 +110,6 @@ type App struct {
 	eventCh       <-chan model.Event
 	userCh        chan<- string // sends user input to the engine bridge
 	lastInterrupt time.Time     // track last ctrl+c for double-press exit
-	mouseEnabled  bool
 
 	// Train mode
 	trainView     model.TrainViewState
@@ -187,6 +186,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, a.ensureWaitForEvent(cmd)
 
 	case tea.MouseMsg:
+		if !a.state.MouseEnabled {
+			return a, nil
+		}
+		if a.handleChatWheel(msg) {
+			return a, nil
+		}
 		var cmd tea.Cmd
 		a.viewport, cmd = a.viewport.Update(msg)
 		return a, cmd
@@ -233,6 +238,31 @@ func (a App) ensureWaitForEvent(cmd tea.Cmd) tea.Cmd {
 		return a.waitForEvent
 	}
 	return tea.Batch(cmd, a.waitForEvent)
+}
+
+func (a *App) handleChatWheel(msg tea.MouseMsg) bool {
+	if a.bootActive || a.bugView.Active() || a.issueView.Active() {
+		return false
+	}
+	if msg.Action != tea.MouseActionPress {
+		return false
+	}
+
+	delta := a.viewport.Model.MouseWheelDelta
+	if delta <= 0 {
+		delta = 3
+	}
+
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		a.viewport.Model.ScrollUp(delta)
+		return true
+	case tea.MouseButtonWheelDown:
+		a.viewport.Model.ScrollDown(delta)
+		return true
+	default:
+		return false
+	}
 }
 
 // chatWidth returns the width available for the chat panel.
@@ -410,10 +440,18 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
-	case "pgup", "pgdown", "home", "end":
+	case "pgup", "pgdown":
 		var cmd tea.Cmd
 		a.viewport, cmd = a.viewport.Update(msg)
 		return a, cmd
+
+	case "home":
+		a.viewport.Model.GotoTop()
+		return a, nil
+
+	case "end":
+		a.viewport.Model.GotoBottom()
+		return a, nil
 
 	case "up", "down":
 		if msg.String() == "up" {
@@ -617,6 +655,23 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 			mi.CtxMax = ev.CtxMax
 		}
 		a.state = a.state.WithModel(mi)
+
+	case model.MouseModeToggle:
+		enabled := a.state.MouseEnabled
+		switch strings.ToLower(strings.TrimSpace(ev.Message)) {
+		case "", "toggle":
+			enabled = !enabled
+		case "on", "enable", "enabled", "true", "1":
+			enabled = true
+		case "off", "disable", "disabled", "false", "0":
+			enabled = false
+		}
+		a.state = a.state.WithMouseEnabled(enabled)
+		if enabled {
+			eventCmd = tea.EnableMouseCellMotion
+		} else {
+			eventCmd = tea.DisableMouse
+		}
 
 	case model.IssueUserUpdate:
 		a.state = a.state.WithIssueUser(ev.Message)

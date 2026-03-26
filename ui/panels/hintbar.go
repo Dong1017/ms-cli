@@ -51,6 +51,8 @@ func RenderHintBar(s model.State, width int) string {
 		left += sep + hintDescStyle.Render("user: "+s.IssueUser)
 	}
 
+	left += sep + hintDescStyle.Render("copy: /mouse off")
+
 	right := ""
 	if s.ReleaseNote != "" {
 		noteStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Italic(true)

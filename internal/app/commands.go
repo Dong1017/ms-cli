@@ -65,6 +65,8 @@ func (a *Application) handleCommand(input string) {
 		a.cmdClose(parts[1:])
 	case "/dock":
 		a.cmdDock()
+	case "/mouse":
+		a.cmdMouse(parts[1:])
 	case "/skill":
 		a.cmdSkill(parts[1:])
 	case "/help":
@@ -306,6 +308,62 @@ func (a *Application) cmdYolo() {
 	}
 }
 
+func (a *Application) cmdMouse(args []string) {
+	mode := "toggle"
+	if len(args) > 0 {
+		mode = strings.ToLower(strings.TrimSpace(args[0]))
+	}
+
+	switch mode {
+	case "on", "enable", "enabled":
+		a.mouseEnabled = true
+		a.EventCh <- model.Event{Type: model.MouseModeToggle, Message: "on"}
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: "Mouse scrolling enabled. Wheel scrolls the main chat. Plain text selection may require Shift+drag in your terminal.",
+		}
+	case "off", "disable", "disabled":
+		a.mouseEnabled = false
+		a.EventCh <- model.Event{Type: model.MouseModeToggle, Message: "off"}
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: "Mouse scrolling disabled. Terminal-native text selection and copy should work again.",
+		}
+	case "toggle":
+		a.mouseEnabled = !a.mouseEnabled
+		if a.mouseEnabled {
+			a.EventCh <- model.Event{Type: model.MouseModeToggle, Message: "on"}
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: "Mouse scrolling enabled. Wheel scrolls the main chat. Plain text selection may require Shift+drag in your terminal.",
+			}
+			return
+		}
+		a.EventCh <- model.Event{Type: model.MouseModeToggle, Message: "off"}
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: "Mouse scrolling disabled. Terminal-native text selection and copy should work again.",
+		}
+	case "status":
+		if a.mouseEnabled {
+			a.EventCh <- model.Event{
+				Type:    model.AgentReply,
+				Message: "Mouse mode is on. Wheel scroll is active. For copying, run /mouse off first or use your terminal's override such as Shift+drag.",
+			}
+			return
+		}
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: "Mouse mode is off. Terminal-native selection/copy is active and wheel events are no longer captured by the TUI.",
+		}
+	default:
+		a.EventCh <- model.Event{
+			Type:    model.AgentReply,
+			Message: "Usage: /mouse [on|off|toggle|status]",
+		}
+	}
+}
+
 func (a *Application) cmdSkill(args []string) {
 	if a.skillLoader == nil {
 		a.EventCh <- model.Event{Type: model.AgentReply, Message: "Skills not available."}
@@ -405,6 +463,7 @@ func (a *Application) cmdHelp() {
   /test                   Test API connectivity
   /permission [tool] [level]  Manage tool permissions
   /yolo                   Toggle auto-approve mode
+  /mouse [on|off|toggle|status]  Toggle mouse wheel mode
   /exit                   Exit the application
   /compact                Compact conversation context to save tokens
   /clear                  Clear chat history
@@ -436,6 +495,10 @@ Keybindings:
   home/end   Jump to top/bottom
   /          Start a slash command
   ctrl+c     Cancel/Quit (press twice to exit)
+
+Copy tip:
+  /mouse off            Restore terminal-native selection/copy
+  /mouse on             Re-enable wheel scrolling in the TUI
 
 Environment Variables:
   MSCLI_PROVIDER          Provider (openai-completion/openai-responses/anthropic)

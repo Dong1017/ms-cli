@@ -51,7 +51,7 @@ func (a *Application) run() error {
 func (a *Application) runReal() error {
 	userCh := make(chan string, 8)
 	tui := ui.New(a.EventCh, userCh, Version, a.WorkDir, a.RepoURL, a.Config.Model.Model, a.Config.Context.Window)
-	p := tea.NewProgram(tui, tea.WithAltScreen())
+	p := tea.NewProgram(tui, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	// Emit saved login so the topbar shows the user immediately.
 	if a.issueUser != "" {
