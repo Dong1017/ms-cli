@@ -73,7 +73,7 @@ func (m updatePrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chosen = true
 			if m.cursor == 0 {
 				m.choice = updateChoiceUpdate
-				m.message = "  Downloading..."
+				m.message = fmt.Sprintf("  Downloading ms-cli %s...", m.result.LatestVersion)
 				return m, doUpdate(m.result)
 			}
 			// Skip (only reachable for non-forced)
