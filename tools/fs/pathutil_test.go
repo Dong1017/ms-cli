@@ -35,8 +35,9 @@ func TestResolveSafePathRejectsEscapeFromWorkDir(t *testing.T) {
 
 func TestResolveSafePathRejectsAbsolutePathOutsideAllowedRoots(t *testing.T) {
 	workDir := t.TempDir()
+	outsidePath := filepath.Join(filepath.Dir(workDir), "outside.txt")
 
-	_, err := resolveSafePath(workDir, filepath.Join(string(os.PathSeparator), "tmp", "outside.txt"))
+	_, err := resolveSafePath(workDir, outsidePath)
 	if err == nil {
 		t.Fatal("resolveSafePath returned nil error, want absolute path rejection")
 	}
