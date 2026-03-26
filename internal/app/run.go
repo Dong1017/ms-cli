@@ -12,7 +12,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/vigo999/ms-cli/agent/loop"
 	"github.com/vigo999/ms-cli/integrations/llm"
-	"github.com/vigo999/ms-cli/internal/update"
 	"github.com/vigo999/ms-cli/internal/version"
 	"github.com/vigo999/ms-cli/ui"
 	"github.com/vigo999/ms-cli/ui/model"
@@ -44,7 +43,9 @@ func Run(args []string) error {
 // run starts the TUI.
 func (a *Application) run() error {
 	go cleanUpdateTmp()
-	a.checkAndApplyUpdate()
+	if checkAndPromptUpdate() {
+		return nil
+	}
 	err := a.runReal()
 	resumeHint := a.exitResumeHint()
 	if a.session != nil {
@@ -414,34 +415,3 @@ func generateTaskID() string {
 	return time.Now().Format("20060102-150405-000")
 }
 
-// checkAndApplyUpdate runs before the TUI starts. If an update is available,
-// it prints progress to stderr, downloads, and installs the new binary.
-// The user then sees "please restart" when the TUI opens.
-func (a *Application) checkAndApplyUpdate() {
-	v := version.Version
-	if v == "" || v == "dev" {
-		return
-	}
-
-	result, err := update.Check(context.Background(), v)
-	if err != nil || result == nil || !result.UpdateAvailable {
-		return
-	}
-
-	fmt.Fprintf(os.Stderr, "ms-cli update available: %s → %s\n", result.CurrentVersion, result.LatestVersion)
-	fmt.Fprintf(os.Stderr, "Downloading %s...\n", result.LatestVersion)
-
-	tmpPath, err := update.Download(context.Background(), result.DownloadURL)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Update download failed: %v\n", err)
-		return
-	}
-
-	if err := update.Install(tmpPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Update install failed: %v\n", err)
-		return
-	}
-
-	fmt.Fprintf(os.Stderr, "ms-cli updated to %s. Please restart mscli.\n", result.LatestVersion)
-	os.Exit(0)
-}
