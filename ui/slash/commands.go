@@ -193,6 +193,12 @@ func (r *Registry) registerDefaults() {
 	})
 
 	r.Register(Command{
+		Name:        "/skill-update",
+		Description: "Update shared skills repo",
+		Usage:       "/skill-update",
+	})
+
+	r.Register(Command{
 		Name:        "/login",
 		Description: "Log in to the bug server",
 		Usage:       "/login <token>",
@@ -200,8 +206,8 @@ func (r *Registry) registerDefaults() {
 
 	r.Register(Command{
 		Name:        "/report",
-		Description: "Create a new issue",
-		Usage:       "/report <failure|accuracy|performance> <title>",
+		Description: "Report a bug or issue",
+		Usage:       "/report [tags] <title> | /report acc|fail|perf <title>",
 	})
 
 	r.Register(Command{

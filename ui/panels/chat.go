@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vigo999/ms-cli/ui/model"
+	uirender "github.com/vigo999/ms-cli/ui/render"
 )
 
 var (
@@ -103,6 +104,9 @@ func RenderMessages(state model.State, spinnerView string, width int, compact ..
 }
 
 func renderUserMsg(content string, width int) string {
+	if summary, ok := uirender.SummarizeLargePaste(content); ok {
+		content = summary
+	}
 	return renderPrefixedBlock(userStyle.Render(content), width, "  "+userStyle.Render(">")+" ", "    ")
 }
 
@@ -149,14 +153,24 @@ func renderHighlightedCollapsedTool(m model.Message, width int) string {
 		body += " " + collapsedNameStyle.Render(content)
 	}
 	if summary := strings.TrimSpace(m.Summary); summary != "" {
-		body += " — " + collapsedSummaryStyle.Render(summary)
+		if strings.Contains(summary, "\n") {
+			lines := strings.Split(summary, "\n")
+			for i := range lines {
+				lines[i] = collapsedSummaryStyle.Render(strings.TrimSpace(lines[i]))
+			}
+			body += "\n" + strings.Join(lines, "\n")
+		} else {
+			body += " — " + collapsedSummaryStyle.Render(summary)
+		}
 	}
 	return renderPrefixedBlock(body, width, "  "+collapsedIconStyle.Render("▸")+" ", "    ")
 }
 
 func isHighlightedSkillTool(name string) bool {
 	name = strings.ToLower(strings.TrimSpace(name))
-	return strings.HasPrefix(name, "skill sync") || strings.HasPrefix(name, "skill ready")
+	return strings.HasPrefix(name, "skill sync") ||
+		strings.HasPrefix(name, "skill ready") ||
+		strings.HasPrefix(name, "mindspore-skills")
 }
 
 // --- Expanded: full output with header + body ---
