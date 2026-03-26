@@ -21,6 +21,7 @@ MSCLI_INSTALL_SOURCE=github curl -fsSL https://raw.githubusercontent.com/vigo999
 MSCLI_INSTALL_SOURCE=gitcode curl -fsSL https://raw.githubusercontent.com/vigo999/ms-cli/main/scripts/install.sh | bash
 
 # Override repo coordinates if your GitCode mirror uses a different owner/repo.
+# Default GitCode mirror: zwiori/ms-cli
 MSCLI_GITCODE_REPO=your-mirror/ms-cli curl -fsSL https://raw.githubusercontent.com/vigo999/ms-cli/main/scripts/install.sh | bash
 ```
 

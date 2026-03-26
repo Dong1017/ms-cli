@@ -2,7 +2,7 @@
 set -euo pipefail
 
 GITHUB_REPO="${MSCLI_GITHUB_REPO:-vigo999/ms-cli}"
-GITCODE_REPO="${MSCLI_GITCODE_REPO:-vigo999/ms-cli}"
+GITCODE_REPO="${MSCLI_GITCODE_REPO:-zwiori/ms-cli}"
 INSTALL_DIR="$HOME/.ms-cli/bin"
 BINARY_NAME="mscli"
 INSTALL_SOURCE="${MSCLI_INSTALL_SOURCE:-auto}"
