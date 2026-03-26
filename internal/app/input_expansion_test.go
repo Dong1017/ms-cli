@@ -109,6 +109,28 @@ func TestProcessInputExpandsPlainChatBeforeRunTask(t *testing.T) {
 	}
 }
 
+func TestProcessInputEmitsExpandedUserInputEvent(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "ctx.txt", "context payload")
+
+	app := &Application{
+		WorkDir:  root,
+		EventCh:  make(chan model.Event, 8),
+		llmReady: false,
+		ctxManager: ctxmanager.NewManager(ctxmanager.ManagerConfig{
+			MaxTokens:     24000,
+			ReserveTokens: 4000,
+		}),
+	}
+
+	app.processInput("please read @ctx.txt")
+
+	ev := drainUntilEventType(t, app, model.UserInput)
+	if !strings.Contains(ev.Message, `[file path="ctx.txt"]`) || !strings.Contains(ev.Message, "context payload") {
+		t.Fatalf("expected expanded user input event, got %q", ev.Message)
+	}
+}
+
 func TestHandleCommandProjectDoesNotExpandExcludedCommand(t *testing.T) {
 	store := newMockProjectStore()
 	app := &Application{
