@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,6 +36,7 @@ var (
 	trainSuccessStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))
 	trainWorkingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
 	queueBannerStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("220")).PaddingLeft(2)
+	atFileCandidateRE = regexp.MustCompile(`^[A-Za-z0-9._/\\-]+$`)
 )
 
 // agentMsg formats an agent message with a status marker and fixed-width source prefix.
@@ -112,6 +114,9 @@ type App struct {
 	userCh        chan<- string // sends user input to the engine bridge
 	lastInterrupt time.Time     // track last ctrl+c for double-press exit
 	mouseEnabled  bool
+	followBottom  bool
+	unreadCount   int
+	lastMsgCount  int
 
 	// Train mode
 	trainView     model.TrainViewState
@@ -127,12 +132,13 @@ type App struct {
 // userCh may be nil — user input won't be forwarded.
 func New(ch <-chan model.Event, userCh chan<- string, version, workDir, repoURL, modelName string, ctxMax int) App {
 	return App{
-		state:      model.NewState(version, workDir, repoURL, modelName, ctxMax),
-		input:      components.NewTextInput(),
-		thinking:   components.NewThinkingSpinner(),
-		eventCh:    ch,
-		userCh:     userCh,
-		bootActive: true,
+		state:        model.NewState(version, workDir, repoURL, modelName, ctxMax),
+		input:        components.NewTextInput().WithFileSuggestions(workDir),
+		thinking:     components.NewThinkingSpinner(),
+		eventCh:      ch,
+		userCh:       userCh,
+		bootActive:   true,
+		followBottom: true,
 	}
 }
 
@@ -196,6 +202,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		var cmd tea.Cmd
 		a.viewport, cmd = a.viewport.Update(msg)
+		a.syncViewportScrollState()
 		return a, cmd
 
 	case tea.WindowSizeMsg:
@@ -259,6 +266,7 @@ func (a *App) resizeInput() {
 func (a *App) resizeActiveLayout() {
 	a.resizeInput()
 	a.viewport = a.viewport.SetSize(a.chatWidth()-4, a.chatHeight())
+	a.syncViewportScrollState()
 }
 
 func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -293,21 +301,17 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.handleBugKey(msg)
 	}
 
-	// Check if we're in slash suggestion mode
-	if a.input.IsSlashMode() {
+	if a.input.HasSuggestions() {
 		switch msg.String() {
-		case "tab", "esc":
+		case "tab", "esc", "enter":
 			var cmd tea.Cmd
 			a.input, cmd = a.input.Update(msg)
 			a.resizeActiveLayout()
 			return a, cmd
 		case "up", "down":
-			// Only capture for suggestions if there are visible candidates
-			if a.input.HasSuggestions() {
-				var cmd tea.Cmd
-				a.input, cmd = a.input.Update(msg)
-				return a, cmd
-			}
+			var cmd tea.Cmd
+			a.input, cmd = a.input.Update(msg)
+			return a, cmd
 		}
 	}
 
@@ -382,14 +386,6 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, cmd
 
 	case "enter":
-		// Don't process enter if in slash mode (handled above)
-		if a.input.IsSlashMode() {
-			var cmd tea.Cmd
-			a.input, cmd = a.input.Update(msg)
-			a.resizeActiveLayout()
-			return a, cmd
-		}
-
 		val := strings.TrimSpace(a.input.Value())
 		if val == "" {
 			if a.trainView.Active && len(a.trainView.GlobalActions.Items) > 0 {
@@ -407,7 +403,7 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Reset stats for new task
 		a.state = a.state.ResetStats()
 		a.state = a.state.WithThinking(false)
-		if !strings.HasPrefix(val, "/") {
+		if !strings.HasPrefix(val, "/") && !shouldDeferUserEcho(val) {
 			a.state = a.state.WithMessage(model.Message{Kind: model.MsgUser, Content: val})
 		}
 		a.input = a.input.PushHistory(val)
@@ -482,7 +478,9 @@ func (a App) maybeDispatchQueuedInput() App {
 	a.queuedInputs = append([]string{}, a.queuedInputs[1:]...)
 	a.state = a.state.ResetStats()
 	a.state = a.state.WithThinking(false)
-	a.state = a.state.WithMessage(model.Message{Kind: model.MsgUser, Content: next})
+	if !strings.HasPrefix(next, "/") && !shouldDeferUserEcho(next) {
+		a.state = a.state.WithMessage(model.Message{Kind: model.MsgUser, Content: next})
+	}
 	select {
 	case a.userCh <- next:
 	default:
@@ -498,7 +496,13 @@ func (a App) handleEvent(ev model.Event) (tea.Model, tea.Cmd) {
 
 	switch ev.Type {
 	case model.UserInput:
-		a.state = a.state.WithMessage(model.Message{Kind: model.MsgUser, Content: ev.Message})
+		if last := len(a.state.Messages) - 1; last >= 0 && a.state.Messages[last].Kind == model.MsgUser {
+			msgs := append([]model.Message{}, a.state.Messages...)
+			msgs[last].Content = ev.Message
+			a.state.Messages = msgs
+		} else {
+			a.state = a.state.WithMessage(model.Message{Kind: model.MsgUser, Content: ev.Message})
+		}
 	case model.IssueIndexOpen:
 		a.openIssueIndex(ev.IssueView)
 
@@ -2026,7 +2030,7 @@ func (a *App) agentStatus() string {
 
 func (a *App) updateViewport() {
 	// Check if user is at (or near) bottom before updating content.
-	atBottom := a.viewport.AtBottom() || a.viewport.TotalLines() <= a.viewport.Model.Height
+	atBottom := a.viewport.AtBottom() || a.viewport.TotalLines() <= a.viewport.VisibleHeight()
 	width := a.viewport.Model.Width
 	if width <= 0 {
 		width = a.chatWidth() - 4
@@ -2102,6 +2106,26 @@ func (a App) View() string {
 	return trimViewHeight(layout, a.height)
 }
 
+func (a *App) syncViewportScrollState() {
+	if a.viewport.AtBottom() {
+		a.followBottom = true
+		a.unreadCount = 0
+		return
+	}
+	a.followBottom = false
+}
+
+func (a *App) syncUnreadState(prevCount int, wasAtBottom bool) {
+	currentCount := len(a.state.Messages)
+	if currentCount > prevCount && !wasAtBottom {
+		a.unreadCount += currentCount - prevCount
+	}
+	if a.viewport.AtBottom() {
+		a.unreadCount = 0
+		a.followBottom = true
+	}
+}
+
 func trimViewHeight(content string, height int) string {
 	if height <= 0 {
 		return content
@@ -2114,6 +2138,27 @@ func trimViewHeight(content string, height int) string {
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+func shouldDeferUserEcho(input string) bool {
+	for _, token := range strings.Fields(input) {
+		if isAtFileCandidateToken(token) {
+			return true
+		}
+	}
+	return false
+}
+
+func isAtFileCandidateToken(token string) bool {
+	switch {
+	case token == "":
+		return false
+	case strings.HasPrefix(token, "@@"):
+		return false
+	case !strings.HasPrefix(token, "@") || len(token) == 1:
+		return false
+	}
+	return atFileCandidateRE.MatchString(token[1:])
 }
 
 // overlayPopup centers a popup box on top of existing rendered content.

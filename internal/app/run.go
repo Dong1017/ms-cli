@@ -119,6 +119,7 @@ func (a *Application) processInput(input string) {
 		a.emitInputExpansionError(err)
 		return
 	}
+	a.EventCh <- model.Event{Type: model.UserInput, Message: expanded}
 
 	go a.runTask(expanded)
 }
@@ -419,4 +420,3 @@ func convertLoopEvent(ev loop.Event) *model.Event {
 func generateTaskID() string {
 	return time.Now().Format("20060102-150405-000")
 }
-

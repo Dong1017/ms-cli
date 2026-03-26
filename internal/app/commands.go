@@ -509,6 +509,7 @@ Keybindings:
 
 @file Input Expansion:
   Plain chat and /report, /diagnose, /fix, /skill, /<skill> alias support standalone @relative/path
+  Typing @path in the composer shows file completion candidates before submit
   Use @@name to keep a literal @name token
   Files must stay inside the workspace, be UTF-8 text, and be <= 64 KiB
   Invalid @file references fail the whole input

@@ -98,19 +98,17 @@ func (a App) handleIssueIndexKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (a App) handleIssueDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if a.input.IsSlashMode() {
+	if a.input.HasSuggestions() {
 		switch msg.String() {
-		case "tab", "esc":
+		case "tab", "esc", "enter":
 			var cmd tea.Cmd
 			a.input, cmd = a.input.Update(msg)
 			a.resizeActiveLayout()
 			return a, cmd
 		case "up", "down":
-			if a.input.HasSuggestions() {
-				var cmd tea.Cmd
-				a.input, cmd = a.input.Update(msg)
-				return a, cmd
-			}
+			var cmd tea.Cmd
+			a.input, cmd = a.input.Update(msg)
+			return a, cmd
 		}
 	}
 
@@ -145,12 +143,6 @@ func (a App) handleIssueDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.resizeActiveLayout()
 		return a, cmd
 	case "enter":
-		if a.input.IsSlashMode() {
-			var cmd tea.Cmd
-			a.input, cmd = a.input.Update(msg)
-			a.resizeActiveLayout()
-			return a, cmd
-		}
 		val := strings.TrimSpace(a.input.Value())
 		if val == "" {
 			return a, nil
