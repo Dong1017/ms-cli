@@ -118,17 +118,21 @@ func (a *Application) runTask(description string) {
 			a.emitToolError("session", "Failed to persist session snapshot: %v", err)
 		}
 	}
+	if err := a.activateSessionPersistence(); err != nil {
+		a.emitToolError("session", "Failed to start session persistence: %v", err)
+		return
+	}
 
 	if !a.llmReady {
 		if err := a.recordUnavailableTurn(description, provideAPIKeyFirstMsg); err != nil {
 			a.emitToolError("context", "Failed to record local turn: %v", err)
 			return
 		}
+		persistSnapshot()
 		emit(model.Event{
 			Type:    model.AgentReply,
 			Message: provideAPIKeyFirstMsg,
 		})
-		persistSnapshot()
 		return
 	}
 
@@ -136,11 +140,6 @@ func (a *Application) runTask(description string) {
 		ID:          generateTaskID(),
 		Description: description,
 	}
-	if err := a.activateSessionPersistence(); err != nil {
-		a.emitToolError("session", "Failed to start session persistence: %v", err)
-		return
-	}
-
 	ctx, runID := a.beginTaskRun()
 	defer a.finishTaskRun(runID)
 
